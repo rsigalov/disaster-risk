@@ -1,0 +1,156 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+
+\usepackage{amsmath, amsfonts, amsthm, amssymb}
+% \usepackage{fourier} 
+
+\usepackage[margin = 0.9in]{geometry}
+% \usepackage{xcolor}
+\usepackage{listings}
+\usepackage{color} %red, green, blue, yellow, cyan, magenta, black, white
+\definecolor{mygreen}{RGB}{28,172,0} % color values Red, Green, Blue
+\definecolor{mylilas}{RGB}{170,55,241}
+% \usepackage[framed,numbered,autolinebreaks,useliterate]{mcode}
+
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage[colorlinks = true,
+            linkcolor = blue,
+            urlcolor  = blue,
+            citecolor = blue,
+            anchorcolor = blue]{hyperref}
+
+\newcommand{\parder}[2]{\frac{\partial #1}{\partial #2}}
+\newcommand{\ex}{\mathbb{E}}
+\newcommand{\eps}{\varepsilon}
+% \newcommand{\oil}{\mathcal{O}}
+
+\usepackage{tikz, pgfplots}
+\usetikzlibrary{arrows, automata}
+\usetikzlibrary{datavisualization.formats.functions}
+
+\begin{document}
+
+\section{Fitting volatility curve with SVI}
+
+\subsection{General Problem}
+
+SVI parametric formulation (e.g. Zeliade, 2009) of the volatility Curve is
+\[\sigma^2_{BS}(k) = a + b\left(\rho (k-m) + \sqrt{(k-m)^2 + \sigma^2}\right)\]
+where $k = \log(Strike/Forward)$ and $(m, \sigma, \rho, a, b)$ -- parameters. This functional form assumes $a\in \mathbb{R}, b\ge 0, |\rho| < 1, m\in \mathbb{R}, \sigma > 0$ and constraint 
+\[a + b\sigma\sqrt{1-\rho^2} \ge 0 \Rightarrow a \ge - b\sigma\sqrt{1-\rho^2}\]
+that insures that this function lies above $0$ everywhere. Absence of static arbitrage requires
+\[b \le \frac{4}{(1+|\rho|)T}\]
+Zeliade notes that for large maturities, almost affine smiles are not uncommon. This corresponds to the case when $\sigma \to 0$ or when $\sigma \to \infty, a \to -\infty$. To rule out the first limiting case, Zeliade (2009) restricts $\sigma \ge \sigma_{min} > 0$. To rule this the second, Zeliade (2009) assumes that $a \ge 0$. However, I found that it is hard to fit the smile when $a \ge 0$, since implied variances for strikes close to current price are too close to zero, so that we may want to set parameter $a < 0$ which is in general doesn't violate anything. 
+
+\subsection{Zeliade (2009) method of reducing dimensionality}
+
+The approach of Zeliade (2009) then minimizes sum of squared residuals over parameters $\theta = (m, \sigma, \rho, a, b)$
+\[\min_{\theta} \sum_{i} \left[a + b\left(\rho (k_i-m) + \sqrt{(k_i-m)^2 + \sigma^2}\right) - \sigma_i^2\right]^2\]
+where $k_i$ -- observed $\log(Strike_i/Forward_i)$ and $\sigma_i$ is the observed implied variance. If we follow Zeliade (2009) assumption that $a \ge 0$, then we can easily transform this problem into a linear one for fixed $(m,\sigma)$:
+\begin{enumerate}
+	\item Divide the parameter $\theta$ into two parts $\theta_1 = (m,\sigma)$ and $\theta_2 = (\rho,a,b)$. Fix $(m,\sigma)$ and substitute $y_i = \frac{k_i - m}{\sigma}$ so that the minimization objective becomes
+	\[\sum_{i} \left[a + b\left(\rho \sigma y_i + \sigma\sqrt{y_i^2 + 1}\right) - \sigma_i^2\right]^2\]
+	\item Zeliade (2009) works with total variance $Tv$ rather than on variance $\sigma^2$ ({\color{red} unclear to me why exactly}). Denote total variance $\tilde{v} = Tv$, so that the SVI becomes 
+	\[v(k) = aT + bT\left(\rho (k-m) + \sqrt{(k-m)^2 + \sigma^2}\right)\]
+	and the minimization objective becomes
+	\[\sum_{i} \left[aT + b\rho \sigma T y_i + b \sigma T\sqrt{y_i^2 + 1} - \tilde{v}_i^2\right]^2\]
+	Replace variables $\tilde{a} := aT, d := b\rho \sigma T, c := b\sigma T$. Now the problem is just a linear least squares regression for the new variables
+	\[\sum_{i} \left[\tilde{a} + d y_i + c\sqrt{y_i^2 + 1} - \tilde{v}_i^2\right]^2\]
+	\item Now we need to deal with constraints.
+	\[\rho \in [-1,1] \Rightarrow |d| \le c\]
+	\[b \ge 0 \Rightarrow c \ge 0\]
+	\[b \le \frac{4}{(1+|\rho|)T} \Rightarrow c \le \frac{4\sigma}{1+|\rho|} \Rightarrow c + c|\rho| \le 4\sigma \Rightarrow c + |d| \le 4\sigma \Rightarrow |d| \le 4\sigma - c\]
+	\[{\color{red} c \le \frac{4\sigma}{1+|\rho|} \Rightarrow c \le 4\sigma}\]
+	\[0 \le a \le \max_{i}v_i \Rightarrow 0 \le \tilde{a} \le \max_i \tilde{v}_i\]
+	Thus, we can described the parameter space as
+	\[\mathcal{D} = \left\{
+	\begin{aligned}
+		& 0 \le c \le 4\sigma \\
+		& |d| \le c, |d| \le 4\sigma - c \\
+		& 0 \le \tilde{a} \le \max_i \tilde{v}_i
+	\end{aligned}\right.\]
+
+\end{enumerate}
+
+\subsection{Simplification of Berger, Dew-Becker and Giglio}
+
+Berger, Dew-Becker and Giglio (?) assumes that $\rho = 0$. $\rho$ controls the assymetry of asymptotes of a hyperbola and thus asymmetry of the slopes of wings of the volatility smile. They say that this including this $\rho$ has a minimal effect on the fit. In this case the smile positivity condition simplifies to $a \ge -b\sigma \Rightarrow \tilde{a} \ge -c$. In this case, the optimization simplifies the following procedure
+\begin{enumerate}
+	\item For fixed $(m, \sigma)$ the objective becomes
+	\[\min_{\tilde{a},d} \sum_{i} \left[\tilde{a} + c\sqrt{y_i^2 + 1} - \tilde{v}_i^2\right]^2\]
+	subject to
+	\[\mathcal{D} = \left\{
+	\begin{aligned}
+		& 0 \le c \le 4\sigma \\
+		& -c \le \tilde{a} \le \max_i \tilde{v}_i
+	\end{aligned}\right.\]
+	$\mathcal{D}$ defines a parallelogram in the parameter space and minimization objective is a convex function.
+
+	\item Define 
+	\[X = \begin{pmatrix}
+		1 & \sqrt{y_1 + 1} \\
+		\vdots & \vdots \\
+		1 & \sqrt{y_n + 1} \\
+	\end{pmatrix}, \tilde{v} = \begin{pmatrix}
+		\tilde{v}_1 \\
+		\vdots \\
+		\tilde{v}_n \\
+	\end{pmatrix}\]
+	\begin{itemize}
+		\item Estimate linear regression $\beta := (\tilde{a} \ c)' = (X'X)^{-1}X'\tilde{v}$. If $\beta \in \mathcal{D}$ then we found the minimum. If $\beta \notin \mathcal{D}$ proceed further
+		\item Estimate regression along the side of domain $\mathcal{D}$. Under a linear constraint on parameters $R\beta = b$, $\beta = \arg\min (X\beta - \tilde{v})'(X\beta - \tilde{v})$ is given by
+		\[\beta = (X'X)^{-1}(X'\tilde{v} + R'\lambda) \text{ where } \lambda = \left[R(X'X)^{-1}R'\right]^{-1}\left[b - R(X'X)^{-1}X'\tilde{v}\right]\]
+		Linear constraints for sides of $\mathcal{D}$ are
+		\[\begin{aligned}
+			(c=0): \ & R = (0 \ 1), b = 0\\
+			(c=4\sigma): \ & R = (0 \ 1), b = 4\sigma\\
+			(\tilde{a} = -c): \ & R = (1 \ 1), b = 0\\
+			(\tilde{a} = \max_i \tilde{v}_i): \ & R = (1 \ 0), b = \max_i \tilde{v}_i\\
+		\end{aligned}\]
+		For each of the constraints we need to check that the solution satisfies all other inequalities. If it doesn't, it can't be a solution candidate
+		\item Estimate objective in 4 vertices
+		\[\begin{aligned}
+			& \tilde{a} = 0, c=0 \\
+			& \tilde{a} = -4\sigma, c=4\sigma \\
+			& \tilde{a} = \max_i \tilde{v}_i, c = 0 \\
+			& \tilde{a} = \max_i \tilde{v}_i, c = 4\sigma \\
+		\end{aligned}\]
+		\item Pick the solution along the sides and vertices that has the lowest objective.
+	\end{itemize}
+	
+\end{enumerate}
+
+Relaxing the constraint from $\tilde{a} \ge 0$ to $\tilde{a} \ge -c$ seems to improve the fit.
+
+\subsection{Proceeding without assuming $\rho = 0$ and $a \ge 0$}
+
+If we don't assume that $\rho = 0$ or $a \ge 0$ and leave constraint $a > -b\sigma\sqrt{1-\rho^2}$ the problem complicates since we can't transform everything into a linear problem. We can proceed in the following way
+
+\begin{enumerate}
+	\item Drop the constraint on $\tilde{a}$ altogether.
+\end{enumerate}
+
+
+
+\section{Appendix}
+
+\subsection{Regression with linear constraints on parameters}
+
+The problem is 
+\[\min_{\beta} \frac{1}{2}(X\beta - \tilde{v})'(X\beta - \tilde{v}) \text{ subject to } R\beta = b\]
+Set up lagrangian
+\[\mathcal{L} = \frac{1}{2}(X\beta - \tilde{v})'(X\beta - \tilde{v}) - \lambda' (R\beta - b)\]
+First order condition
+\[\parder{\mathcal{L}}{\beta} = (X\beta - \tilde{v})'X - \lambda' R = 0 \Rightarrow \beta'X'X - \tilde{v}'X - \lambda'R = 0 \Rightarrow \beta = (X'X)^{-1}(X'\tilde{v} + R'\lambda)\]
+Plug this into constraint to get
+\[R(X'X)^{-1}(X'\tilde{v} + R'\lambda) = b \Rightarrow R(X'X)^{-1}X'\tilde{v} + R(X'X)^{-1}R'\lambda = b \Rightarrow\] 
+\[\lambda = \left[R(X'X)^{-1}R'\right]^{-1}\left[b - R(X'X)^{-1}X'\tilde{v}\right]\]
+If we plug $\lambda$ back into the expression for $\beta$ we can get the final answer.
+
+
+	
+\end{document}
+
+
+

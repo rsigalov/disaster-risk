@@ -17,6 +17,8 @@ from datetime import datetime, timedelta
 from scipy.optimize import minimize, Bounds, LinearConstraint
 from math import log, exp, pi
 
+import time
+
 import os
 os.chdir('/Users/rsigalov/Documents/PhD/disaster-risk-revision')
 
@@ -28,14 +30,14 @@ query_check = """
         secid, date, exdate
     from OPTIONM.OPPRCD2017
     where date = '2017-09-01'
-    and secid = 101594
+    and secid = 108105
 """
 query_check = query_check.replace('\n', ' ').replace('\t', ' ')
 check_data = db.raw_sql(query_check)
 
 opt_date = "'2017-09-01'"
 exp_date = "'2017-10-20'"
-_secid_ = '101594'
+_secid_ = '108105'
 
 query_prot = """
     with security_table as (
@@ -118,7 +120,8 @@ m = 0
 
 # For given sigma and m calculate y_i as y_i = (strike_i - m)/sigma:
 prot_data = prot_data.sort_values('strike_price')
-impl_vol = np.array(prot_data['impl_volatility'])
+#impl_vol = np.array(prot_data['impl_volatility'])
+impl_vol = np.power(np.array(prot_data['impl_volatility']),2)
 strike = np.array(prot_data['strike_price'])/1000
 
 # Calculating log-moneyness that used in SVI formulation of
@@ -126,12 +129,22 @@ strike = np.array(prot_data['strike_price'])/1000
 P = prot_data['under_price'].iloc[0] # Current price of the underlying
 log_moneyness = np.log(strike/P)
 
+#def satisfies_constraints(sigma, beta, max_v):
+#    a = beta[0]
+#    c = beta[1]
+#    
+#    satisfies = True
+#    if c < 0 or c > 4*sigma or a < 0 or a > max_v:
+#        satisfies = False
+#        
+#    return satisfies
+
 def satisfies_constraints(sigma, beta, max_v):
     a = beta[0]
     c = beta[1]
     
     satisfies = True
-    if c < 0 or c > 4*sigma or a < 0 or a > max_v:
+    if c < 0 or c > 4*sigma or a < -c or a > max_v:
         satisfies = False
         
     return satisfies
@@ -196,8 +209,13 @@ def objective_fixed_m_sigma(m, sigma, log_moneyness, impl_vol, T):
     b = np.array([[4 * sigma]])
     beta_opt, min_obj = calculate_and_update_beta(X, v, min_obj, beta_opt, sigma, max_v, R, b)
     
-    # iii. a = 0
-    R = np.array([[1, 0]])
+#    # iii. a = 0
+#    R = np.array([[1, 0]])
+#    b = np.array([[0]])
+#    beta_opt, min_obj = calculate_and_update_beta(X, v, min_obj, beta_opt, sigma, max_v, R, b)
+
+    # iii. a = -c => a + c = 0
+    R = np.array([[1, 1]])
     b = np.array([[0]])
     beta_opt, min_obj = calculate_and_update_beta(X, v, min_obj, beta_opt, sigma, max_v, R, b)
     
@@ -209,16 +227,20 @@ def objective_fixed_m_sigma(m, sigma, log_moneyness, impl_vol, T):
     ########################################################
     # 3. Calculating objective in vertices of the constraints
     # rectangle
+    # i. a = 0, c = 0
     beta_vert_1 = np.array([[0],[0]])
     beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_1, min_obj, beta_opt)
     
-    beta_vert_2 = np.array([[4*sigma],[0]])
+    # ii. a = -4sigma, c = 4sigma
+    beta_vert_2 = np.array([[-4 * sigma],[4 * sigma]])
     beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_2, min_obj, beta_opt)
     
-    beta_vert_3 = np.array([[0],[max_v]])
+    # iii. a = max_v, c = 0
+    beta_vert_3 = np.array([[max_v],[0]])
     beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_3, min_obj, beta_opt)
     
-    beta_vert_4 = np.array([[4*sigma],[max_v]])
+    # iv. a = max_v, c = 4sigma
+    beta_vert_4 = np.array([[max_v],[4 * sigma]])
     beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_4, min_obj, beta_opt)
 
     return (beta_opt, min_obj)
@@ -232,12 +254,13 @@ def to_minimize(x):
 
 ################################################
 # Grid search to find a good starting value:
-dim_m_grid = 10
+dim_m_grid = 20
 range_m_grid = np.arange(-1,1,2/dim_m_grid)
-dim_sigma_grid = 10
-range_sigma_grid = np.arange(0.001,10,(10-0.01)/dim_sigma_grid)
+dim_sigma_grid = 20
+range_sigma_grid = np.arange(0.00001,10,(10-0.01)/dim_sigma_grid)
 obj_grid = np.ones((dim_m_grid, dim_sigma_grid))*np.Inf
 
+start = time.time()
 for i in range(dim_m_grid):
     for j in range(dim_sigma_grid):
         beta_opt, obj = objective_fixed_m_sigma(range_m_grid[i], range_sigma_grid[j], log_moneyness, impl_vol, T)
@@ -249,13 +272,15 @@ sigma_start = range_sigma_grid[int(j_min)]
 
 x0 = [m_start, sigma_start]
 bounds = Bounds([-np.Inf, 0.00001], [np.Inf, np.Inf])
-opt_x = minimize(to_minimize, x0, method='L-BFGS-B', tol=1e-12,
-                 options={'ftol': 1e-12, 'gtol': 1e-12, 'maxiter': 10000},
+opt_x = minimize(to_minimize, x0, method='SLSQP', tol=1e-12,
+                 options={'ftol': 1e-12,  'maxiter': 10000},
                  bounds = bounds)
+end = time.time()
+print(end - start)
 
 # Getting all the parameters for the SVI:
 m_opt = opt_x['x'][0]
-sigma_opt = opt_x['x'][0]
+sigma_opt = opt_x['x'][1]
 beta_opt, obj = objective_fixed_m_sigma(m_opt, sigma_opt, log_moneyness, impl_vol, T)
 a_tilde_opt = beta_opt[0,0]
 a_opt = a_tilde_opt/T
@@ -272,17 +297,8 @@ plt.plot(strike, svi_smile(log_moneyness, [m_opt, sigma_opt, a_opt, b_opt]), col
 plt.show()
 
 
-
-
-
-
-
-
-
-
 ################################################
 # Explicit minimization over 4 variables:
-
 def svi_smile(log_moneyness, x):
     return x[2] + x[3]*np.sqrt(np.power(log_moneyness - x[0], 2) + x[1] ** 2)
 
@@ -290,40 +306,43 @@ def to_minimize_v2(x):
     obj = np.sum(np.power(svi_smile(log_moneyness, x) - impl_vol,2))
     return obj
 
-bounds = Bounds([-np.Inf, 0.00001, 0, -np.Inf], [np.Inf, np.Inf, max(impl_vol), 4/T])
+start = time.time()
+
+bounds = Bounds([-np.Inf, 0.00001, -np.Inf, -np.Inf], [np.Inf, np.Inf, max(impl_vol), 4/T])
 opt_x = minimize(to_minimize_v2, [0.02, 0.3, -0.3, 1.7], method='SLSQP', tol=1e-12,
                  options={'ftol': 1e-12, 'maxiter': 10000}, bounds = bounds)
-
-
-################################################
-# Explicit minimization for fixed m and sigma
-# and modified variables:
-N = log_moneyness.shape[0]
-y = (log_moneyness - m_opt)/sigma_opt
-y_hyp = np.sqrt(np.power(y,2) + 1)
-v = impl_vol * T
-
-def to_minimize_v3(x):    
-    obj = np.sum(np.power(x[0] + x[1] * y_hyp - v, 2))
-    return obj
-
-bounds = Bounds([0, 0], [max(v.flatten()), 4*sigma_opt])
-opt_x = minimize(to_minimize_v3, [0.008, 0.03/70], method='SLSQP', tol=1e-12,
-                 options={'ftol': 1e-12, 'maxiter': 10000}, bounds = bounds)
+end = time.time()
+print(end - start)
 opt_x
 
-plt.scatter(log_moneyness, impl_vol)
+plt.scatter(log_moneyness, impl_vol, alpha = 0.5)
 plt.plot(log_moneyness, svi_smile(log_moneyness, opt_x['x']), color = 'r')
 plt.show()
 
-plt.scatter(log_moneyness, impl_vol)
-plt.plot(log_moneyness, svi_smile(log_moneyness, [m_opt, sigma_opt, 0.01470286/T, 0]), color = 'r')
+
+################################################
+# Explicit minimization over 5 variables:
+def svi_smile(log_moneyness, x):
+    return x[2] + x[3]*(x[4] * (log_moneyness - x[0]) + np.sqrt(np.power(log_moneyness - x[0], 2) + x[1] ** 2))
+
+def to_minimize_v2(x):
+    obj = np.sum(np.power(svi_smile(log_moneyness, x) - impl_vol,2))
+    return obj
+
+start = time.time()
+
+bounds = Bounds([-np.Inf, 0.00001, -np.Inf, -np.Inf, -1], [np.Inf, np.Inf, max(impl_vol), 4/T, 1])
+opt_x = minimize(to_minimize_v2, [0.02, 0.3, -0.3, 1.7, 0], method='SLSQP', tol=1e-12,
+                 options={'ftol': 1e-12, 'maxiter': 10000}, bounds = bounds)
+end = time.time()
+print(end - start)
+opt_x
+
+plt.scatter(log_moneyness, impl_vol, alpha = 0.5)
+plt.plot(log_moneyness, svi_smile(log_moneyness, opt_x['x']), color = 'r')
 plt.show()
 
-########################################
-beta = opt_x['x'].reshape((2,-1))
 
-compare_and_update_beta(X, v, beta, np.Inf, np.array([[0],[0]]))
 
 
 

@@ -16,7 +16,7 @@ class OptionSmile:
 		self.spot = spot_price
 		self.strikes = strikes
 		self.impl_vol = impl_vol
-		self.T = (obs_date - exp_date).days/252
+		self.T = (exp_date - obs_date).days/252
 
 	def fit_svi_bdbg_smile(self):
 
@@ -34,9 +34,9 @@ class OptionSmile:
 
 		# Performing grid search to find good starting values for 
 		# numerical optimization over (m, sigma)
-		dim_m_grid = 20
+		dim_m_grid = 30
 		range_m_grid = np.arange(-1,1,2/dim_m_grid)
-		dim_sigma_grid = 20
+		dim_sigma_grid = 30
 		range_sigma_grid = np.arange(0.00001,10,(10-0.01)/dim_sigma_grid)
 		obj_grid = np.ones((dim_m_grid, dim_sigma_grid))*np.Inf
 
@@ -51,7 +51,7 @@ class OptionSmile:
 
 		# Numerical optimization over (m, sigma)
 		x0 = [m_start, sigma_start]
-		bounds = Bounds([-np.Inf, 0.00001], [np.Inf, np.Inf])
+		bounds = Bounds([-1, 0.00001], [1, np.Inf])
 		opt_x = minimize(to_minimize, x0, method='SLSQP', tol=1e-12,
 		                 options={'ftol': 1e-12,  'maxiter': 10000},
 		                 bounds = bounds)
@@ -65,13 +65,13 @@ class OptionSmile:
 		b_opt = c_opt/sigma_opt
 
 		# Writing into the object data
-		self.svi_bdbd_smile_params = {}
-		self.svi_bdbd_smile_params['m'] = m_opt
-		self.svi_bdbd_smile_params['sigma'] = sigma_opt
-		self.svi_bdbd_smile_params['rho'] = 0
-		self.svi_bdbd_smile_params['a'] = a_opt
-		self.svi_bdbd_smile_params['b'] = b_opt
-		self.svi_bdbd_smile_params['success'] = opt_x['success']
+		self.svi_bdbg_smile_params = {}
+		self.svi_bdbg_smile_params['m'] = m_opt
+		self.svi_bdbg_smile_params['sigma'] = sigma_opt
+		self.svi_bdbg_smile_params['rho'] = 0
+		self.svi_bdbg_smile_params['a'] = a_opt
+		self.svi_bdbg_smile_params['b'] = b_opt
+		self.svi_bdbg_smile_params['success'] = opt_x['success']
 
 
 	def fit_svi_var_rho_smile(self):
@@ -87,11 +87,11 @@ class OptionSmile:
 		    
 		    return min_obj
 
-		dim_m_grid = 15
+		dim_m_grid = 20
 		range_m_grid = np.arange(-1,1,2/dim_m_grid)
-		dim_sigma_grid = 15
+		dim_sigma_grid = 20
 		range_sigma_grid = np.arange(0.00001,10,(10-0.01)/dim_sigma_grid)
-		dim_rho_grid = 15
+		dim_rho_grid = 20
 		range_rho_grid = np.arange(-1,1,(1-(-1))/dim_rho_grid)
 		obj_grid = np.ones((dim_m_grid, dim_sigma_grid, dim_rho_grid))*np.Inf
 
@@ -109,7 +109,7 @@ class OptionSmile:
 		rho_start = range_rho_grid[int(k_min)]
 
 		x0 = [m_start, sigma_start, rho_start]
-		bounds = Bounds([-np.Inf, 0.00001, -1], [np.Inf, np.Inf, 1])
+		bounds = Bounds([-1, 0.00001, -1], [1, np.Inf, 1])
 		opt_x = minimize(to_minimize, x0, method='SLSQP', tol=1e-12,
 		                 options={'ftol': 1e-12,  'maxiter': 10000},
 		                 bounds = bounds)
@@ -143,11 +143,11 @@ class OptionSmile:
 
 
 		if model == 'svi_bdbg':
-			m = self.svi_bdbd_smile_params['m']
-			sigma = self.svi_bdbd_smile_params['sigma']
-			rho = self.svi_bdbd_smile_params['rho']
-			a = self.svi_bdbd_smile_params['a']
-			b = self.svi_bdbd_smile_params['b']
+			m = self.svi_bdbg_smile_params['m']
+			sigma = self.svi_bdbg_smile_params['sigma']
+			rho = self.svi_bdbg_smile_params['rho']
+			a = self.svi_bdbg_smile_params['a']
+			b = self.svi_bdbg_smile_params['b']
 
 			ax.scatter(log_moneyness, impl_var, alpha = 0.5)
 			ax.plot(log_moneyness, svi_smile(log_moneyness, m, sigma, rho, a, b), color = 'r')
@@ -193,6 +193,9 @@ def constrained_opt(X, v, R = None, b = None):
         beta = XX_inv @ (X.T @ v + R.T @ lambda_)
     
     return beta
+
+def ls_opt(X,v):
+	return pinv(X.T @ X) @ X.T @ v
 
 def compare_and_update_beta(X, v, beta, min_obj, beta_opt):
     obj = np.sum(np.power((X @ beta).flatten() - v.flatten(),2))
@@ -363,6 +366,87 @@ def obj_var_rho_fixed_m_sigma(m, sigma, rho, log_moneyness, impl_var, T):
     beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_4, min_obj, beta_opt)
 
     return (beta_opt, min_obj)
+
+########################################################
+# Supporting functions for fitting SVI with explicit
+# substitution of constraints into the minimization
+# objective
+########################################################
+# def calculate_and_update_beta_explicit_sub(X, v, min_obj, beta_opt, sigma, max_v):
+#     beta = ls_opt(X, v)
+#     if satisfies_constraints(sigma, beta, max_v):
+#         beta_opt, min_obj = compare_and_update_beta(X, v, beta, min_obj, beta_opt)
+        
+#     return (beta_opt, min_obj)
+
+# def obj_bdbg_fix_m_sigma_explicit_sub(m, sigma, log_moneyness, impl_vol, T):
+#     N = log_moneyness.shape[0]
+#     y = (log_moneyness - m)/sigma
+#     y_hyp = np.sqrt(np.power(y,2) + 1)
+#     # v = impl_vol * T
+#     v = impl_vol
+#     v = v.reshape(N,-1)    
+    
+#     # Values to store 
+#     min_obj = np.Inf
+#     beta_opt = np.array([[0],[0]])
+
+#     N = v.shape[0]
+#     X = np.ones((N,2))
+#     X[:, 1] = y_hyp
+#     max_v = max(v.flatten())
+	
+# 	########################################################    
+#     # 1. Internal solution
+#     X_fit = X
+#     v_fit = v
+#     beta_opt, min_obj = calculate_and_update_beta_explicit_sub(X_fit, v_fit, min_obj, beta_opt, sigma, max_v)
+
+#     ########################################################
+#     # 2. Looking at sides of parallelepipid:
+#     # i. c = 0
+#     X_fit = np.ones((N,1))
+#     v_fit = v
+#     beta_opt, min_obj = calculate_and_update_beta_explicit_sub(X_fit, v_fit, min_obj, beta_opt, sigma, max_v)
+    
+#     # ii. c = 4\sigma
+#     v_fit = v - 4*sigma*y_hyp
+#     beta_opt, min_obj = calculate_and_update_beta_explicit_sub(X_fit, v_fit, min_obj, beta_opt, sigma, max_v)
+
+#     # iii. a = -c => a + c = 0
+#     X_fit = y_hyp.reshape(N,-1) - 1
+#     v_fit = v
+#     beta_opt, min_obj = calculate_and_update_beta_explicit_sub(X_fit, v_fit, min_obj, beta_opt, sigma, max_v)
+    
+#     # iv. a = max_v
+#     X_fit = y_hyp.reshape(N,-1)  
+#     v_fit = v - max_v
+#     beta_opt, min_obj = calculate_and_update_beta_explicit_sub(X_fit, v_fit, min_obj, beta_opt, sigma, max_v)
+
+#     ########################################################
+#     # 3. Calculating objective in vertices of the constraints
+#     # rectangle
+#     # i. a = 0, c = 0
+#     beta_vert_1 = np.array([[0],[0]])
+#     beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_1, min_obj, beta_opt)
+    
+#     # ii. a = -4sigma, c = 4sigma
+#     beta_vert_2 = np.array([[-4 * sigma],[4 * sigma]])
+#     beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_2, min_obj, beta_opt)
+    
+#     # iii. a = max_v, c = 0
+#     beta_vert_3 = np.array([[max_v],[0]])
+#     beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_3, min_obj, beta_opt)
+    
+#     # iv. a = max_v, c = 4sigma
+#     beta_vert_4 = np.array([[max_v],[4 * sigma]])
+#     beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_4, min_obj, beta_opt)
+
+#     return (beta_opt, min_obj)
+
+
+
+
 
 
 

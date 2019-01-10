@@ -1,0 +1,16 @@
+########################################################
+# Code for implicit minimization over (m,sigma,rho)
+########################################################
+import numpy as np
+from numpy.linalg import inv, pinv
+import pandas as pd
+from pandas.tseries.offsets import *
+from matplotlib import pyplot as plt
+from datetime import datetime, timedelta
+from scipy.optimize import minimize, Bounds, LinearConstraint
+from math import log, exp, pi, sqrt
+import time
+import os
+os.chdir('/Users/rsigalov/Documents/PhD/disaster-risk-revision')
+
+from OptionSmile import *

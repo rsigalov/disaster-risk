@@ -218,7 +218,7 @@ def obj_bdbg_fix_m_sigma(m, sigma, log_moneyness, impl_vol, T):
     y_hyp = np.sqrt(np.power(y,2) + 1)
     # v = impl_vol * T
     v = impl_vol
-    v = v.reshape(N,-1)    
+    v = v.reshape(N,-1) 
     
     # Values to store 
     min_obj = np.Inf

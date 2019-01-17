@@ -1,5 +1,5 @@
 with security_table as (
-    select 
+    select
         secid, date, close as under_price
     from optionm.SECPRD
     where date = opt_date
@@ -25,7 +25,7 @@ with security_table as (
     and o.impl_volatility is not null
     and o.strike_price/1000 > s.under_price
     and (o.best_offer + o.best_bid)/2 < s.under_price
-	order by o.exdate, o.strike_price 
+	order by o.exdate, o.strike_price
 ) union (
 	select
 	   o.secid, o.date, o.exdate, o.cp_flag, o.strike_price, o.impl_volatility,
@@ -48,4 +48,4 @@ with security_table as (
     and (o.best_offer + o.best_bid)/2 < o.strike_price/1000
     and (o.best_offer + o.best_bid)/2 >= GREATEST(0, o.strike_price/1000 - s.under_price)
 	order by o.exdate, o.strike_price
-)    
+)

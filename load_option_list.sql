@@ -1,12 +1,12 @@
 with security_table as (
-    select 
+    select
         secid, date, close as under_price
     from optionm.SECPRD
     where secid = _secid_
 )
 (
     select
-	   o.secid, o.date, o.exdate, o.cp_flag, o.strike_price, o.impl_volatility,
+	   o.secid, o.symbol, o.date, o.exdate, o.cp_flag, o.strike_price, o.impl_volatility,
        (o.best_offer + o.best_bid)/2 as mid_price,
        s.under_price
 	from OPTIONM.OPPRCD2017 as o
@@ -24,10 +24,10 @@ with security_table as (
     and (o.best_offer + o.best_bid)/2 < s.under_price
     and o.exdate - o.date < 60
     and o.exdate - o.date > 25
-	order by o.exdate, o.strike_price 
+	order by o.exdate, o.strike_price
 ) union (
 	select
-	   o.secid, o.date, o.exdate, o.cp_flag, o.strike_price, o.impl_volatility,
+	   o.secid, o.symbol, o.date, o.exdate, o.cp_flag, o.strike_price, o.impl_volatility,
        (o.best_offer + o.best_bid)/2 as mid_price,
        s.under_price
 	from OPTIONM.OPPRCD2017 as o
@@ -47,4 +47,4 @@ with security_table as (
     and o.exdate - o.date < 60
     and o.exdate - o.date > 25
 	order by o.exdate, o.strike_price
-)    
+)

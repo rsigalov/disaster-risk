@@ -8,6 +8,7 @@
 \BOOKMARK [1][-]{section.3}{Generating Option Prices}{}% 8
 \BOOKMARK [2][-]{subsection.3.1}{IvyDB approach to implied volatility}{section.3}% 9
 \BOOKMARK [2][-]{subsection.3.2}{Continuously Compounded vs. Discrete Dividends}{section.3}% 10
-\BOOKMARK [1][-]{section.4}{Matching Prices}{}% 11
-\BOOKMARK [1][-]{section.5}{Appendix}{}% 12
-\BOOKMARK [2][-]{subsection.5.1}{Regression with linear constraints on parameters}{section.5}% 13
+\BOOKMARK [1][-]{section.4}{Calculating Du and Kapadia Measure of Jump Risk}{}% 11
+\BOOKMARK [2][-]{subsection.4.1}{}{section.4}% 12
+\BOOKMARK [1][-]{section.5}{Appendix}{}% 13
+\BOOKMARK [2][-]{subsection.5.1}{Regression with linear constraints on parameters}{section.5}% 14

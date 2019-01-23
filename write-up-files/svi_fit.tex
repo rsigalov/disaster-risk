@@ -184,11 +184,12 @@ where $h_{i} = t_{i+1} - t_i$. Then each polynomial is given by
 
 \subsection{IvyDB approach to implied volatility}
 
-In order to calculate option price for given strike and a given volatility we need to know the Zero Coupon Rate for the maturity of the option and the type of dividends. The approach for calculating option prices for indices and individual equities differs:
+In order to calculate option price for given strike and a given volatility we need to know the Zero Coupon Rate for the maturity of the option and the type of dividends. The approach for calculating option prices for indices and individual equities differs (I took details from IvyDB reference on WRDS (\href{https://wrds-www.wharton.upenn.edu/documents/755/IvyDB_US_Reference_Manual.pdf}{link})):
 \begin{enumerate}
 	\item For indices IvyDB assumes that dividends are continuously compounded. They use a structural regression that utilizes put-call parity to get dividends yield. Table OPTIONM.IDXDVD provides such estimate for the dividend yield. 
 	\item For equities IvyDB uses either actual ex-dividend date if dividends were announced or it uses projected date using the frequency of dividends. Information about historical dividends and other distributions is provided in table OPTIONM.DISTRD
 \end{enumerate}
+
 
 Zero Coupon Rates for standard maturities is provided in Table OPTIONM.ZEROCD where IvyDB provides annualized continuously compounded interest rate. To get the interest rate for the maturity of the option IvyDB linearly interpolates interest rates for neighboring maturities. 
 
@@ -216,10 +217,30 @@ where we replace $S_0$ with $F_0(T)P_0(T)$ and $F_0(T)$ is calculated as
 
 To get price of ZCB I use a table with ZCB rates from IvyDB and linearly interpolate them, if dividend is paid before the minimal maturity in the ZCB table I set the rate equal to the one for minimal maturity. \textbf{\color{red} Since the time to maturity is generally short this doesn't make a lot of difference}
 
-\section{Matching Prices}
 
-First, I calculate option prices using formulas from above given implied volatilities and compare them with midprices.
-	
+\newpage
+
+\section{Calculating Du and Kapadia Measure of Jump Risk}
+
+\subsection[]{Comment about $\mu_{0,T}$ term}
+
+Derivation of $\mathbb{D}(T)$ term require calculating
+\[\mu_{0,T} = E^*_0\left[\log\frac{S_T}{S_0}\right]\]
+In the paper they do the following. First, denote $R_T = \log(S_T/S_0)$. Second, using the martingale property under the risk neutral measure they write
+\[e^{rT} = E^*_0\left[\frac{S_T}{S_0}\right] = E^*_0\left[e^{R_T}\right]\]
+Second, expand function $e^R$ around $R = 0$ to get
+\[e^{rT} = E^*_0\left[1 + R_T + \frac{1}{2}R^2_T + \frac{1}{6}R^3_T + \frac{1}{24}R^4_T\right]\]
+\[e^{rT} = 1 + E^*_0R_T + \frac{1}{2}E^*_0R^2_T + \frac{1}{6}E^*_0R^3_T + \frac{1}{24}E^*_0R^4_T\]
+\[E^*_0\left[\log\frac{S_T}{S_0}\right] \equiv E^*_0R_T = e^{rT} - 1 - \frac{1}{2}E^*_0R^2_T - \frac{1}{6}E^*_0R^3_T - \frac{1}{24}E^*_0R^4_T\]
+Third, they use option spanning theorem that any contract with twice continuously differentiable payoff function $H(S)$ has price
+\[e^{-rT}E^*_0[H(S)] = e^{-rT}(H(\bar{S}) - \bar{S}H'(\bar{S})) + H'(\bar{S})S_0 + \int_{\bar{S}}^\infty H''(K)C(0,T,K)dK + \int_0^{\bar{S}} H''(K)P(0,T,K)dK\]
+to price each of the terms $E^*_0R^2_T$, $E^*_0R^3_T$ and $E^*_0R^4_T$.
+
+\textbf{\color{red} I am confused why can't you directly apply this theorem to log-contract?} If we let
+\[H(S_T) = \log\frac{S_T}{S_0} = \log(S_T) - \log(S_0)\]
+we can write
+\[e^{-rT}E^*_0[\log(S_T)] = e^{-rT}(\log(\bar{S}) - \bar{S}\frac{1}{\bar{S}}) + \frac{1}{\bar{S}}S_0 - \int_{\bar{S}}^\infty \frac{1}{K^2}C(0,T,K)dK - \int_0^{\bar{S}} \frac{1}{K^2}P(0,T,K)dK\]
+
 
 
 

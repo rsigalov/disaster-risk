@@ -121,15 +121,105 @@ Berger, Dew-Becker and Giglio (?) assumes that $\rho = 0$. $\rho$ controls the a
 	
 \end{enumerate}
 
-Relaxing the constraint from $\tilde{a} \ge 0$ to $\tilde{a} \ge -c$ seems to improve the fit.
+Relaxing the constraint from $\tilde{a} \ge 0$ to $\tilde{a} \ge -c$ seems to improve the fit from visual inspection.
 
-\subsection{Proceeding without assuming $\rho = 0$ and $a \ge 0$}
+This is one of the methods that I use to fit the volatility smile. The main problem as it is also outline in Berger, Dew-Becker and Giglio (?) is that the minimization is very sensitive to starting values and hence they use grid search over $m \times \sigma = [-1,1] \times [0.00001, 10]$ to pick a starting value and then they use local derivative free minimization algorithm. I do the same in one of the approaches. In another approach, I use global optimization algorithm. These algorithms require the set to be bounded and I use the same bounds as in the grid search. I then compare both of these approaches by plotting fit of each.
 
-If we don't assume that $\rho = 0$ or $a \ge 0$ and leave constraint $a > -b\sigma\sqrt{1-\rho^2}$ the problem complicates since we can't transform everything into a linear problem. We can proceed in the following way
+\subsection[alternative title goes here]{Proceeding without assuming $\rho = 0$ or $\tilde{a} \ge 0$}
 
+Zeliade (2009) doesn't assume $\rho = 0$ and they can still derive a simple objective. The reason is that they assume $\tilde{a} \ge 0$ in which case the constraint becomes linear. If we don't assume this, we are left with constraint $\tilde{a} \ge -c\sigma\sqrt{1-\rho^2}$ so that we can't use the same bounded linear regression approach. It seems that the only way to proceed is to perform factor out $a$ and $b$ out of optimization and perform the outer numerical optimization over $(m, \sigma, \rho)$. The issue is that we either need to add the third dimension to the grid search or perform global optimization over 3 variables. Grid search over 3 variables is quite costly. Global optimization also adds computational complexity but not to the same extent. Nevertheless, I use the two approaches in order to compare the fit and see if it is worthwhile to fit volatility smile in this way.
+
+For fixed $(m, \sigma, \rho)$ the minimization objective becomes
+\[\min_{a, b} \sum_i \left[a + b\left(\rho \sigma y_i + \sigma\sqrt{y_i^2 + 1}\right) - \sigma_i^2\right]^2 \text{ subject to }\]
+\[(a,b) \in \mathcal{D} = 
+\left\{\begin{aligned}
+	-b\sigma\sqrt{1-\rho^2} \le & a \le \max_i\{\sigma_i\} \\
+	0 \le &b \le \frac{4}{(1+|\rho|)T} \\
+\end{aligned}\right.\]
+that is very similar to the problem considered before. 
+
+
+
+
+\section{Cubic Spline Volatility Smile Interpolation and Extrapolation}
+
+The FED paper ({\color{red} Include citation}) suggests using cubic spline to interpolate and extrapolate implied volatilities. Cubic spline is defined as piecewise cubic polynomials that pass through all points (knots) and have continuous first and second derivatives. Estimation of these derivatives pins down to solving a system of linear equations. To complete the system we need to specify conditions of derivatives on the boundary knots. The FED paper sets the first derivative equal to zero at both the lowest and the highest maturities so that extrapolation beyond these points is linear and flat. This is called Clamped Cubic Spline.
+
+In deriving the system I followed the approach (\href{http://cis.poly.edu/~mleung/CS3734/s03/ch07/cubicSpline.pdf}{here}). Note that they have a couple of typos and they provide a system for different condition on the derivatives on boundary knots. I don't provide the full derivations, just the final system. 
+
+\subsection{Clamped Cubic Spline System}
+
+We have a set of points $(t_1,y_1), \dots, (t_n, y_n)$, we will need $n - 1$ cubic polynomials with equations $S_i(x)$ to interpolate these points. Denote $z_i := S_{i}''(t_i)$. Then, we can show that $(z_1,\dots,z_n)$ is the solution to the system
+\[\scriptscriptstyle\begin{pmatrix}
+	2h_1 & h_1 & 0 & 0 & \dots & 0 & 0 & 0 \\
+	h_1 & 2(h_1 + h_2) & h_2 & 0 & \dots & 0 & 0 & 0 \\
+	0 & h_2 &  2(h_2 + h_3) & h_3 & \dots & 0 & 0 & 0 \\
+	\vdots & \vdots & \vdots & \ddots & \dots & \vdots & \vdots & \vdots \\
+	0 & 0 & 0 & 0 & \dots & h_{n-2} & 2(h_{n-2} + h_{n-1}) & h_{n-1} \\
+	0 & 0 & 0 & 0 & \dots & 0 & h_{n-1} & 2h_{n-1}
+\end{pmatrix}
+\begin{pmatrix}
+	z_1 \\ \vdots \\ z_n
+\end{pmatrix}\]
+\[\scriptscriptstyle=
+\begin{pmatrix}
+	\frac{6}{h_1}(y_2 - y_1) \\
+	\frac{6}{h_2}(y_3 - y_2) - \frac{6}{h_1}(y_2-y_1) \\
+	\frac{6}{h_3}(y_4 - y_3) - \frac{6}{h_2}(y_3-y_2) \\
+	\vdots \\
+	\frac{6}{h_{n-1}}(y_n - y_{n-1}) - \frac{6}{h_{n-2}}(y_{n-1}-y_{n-2}) \\
+	-\frac{6}{h_{n-1}}(y_n-y_{n-1})
+\end{pmatrix}\]
+where $h_{i} = t_{i+1} - t_i$. Then each polynomial is given by
+\[\begin{aligned}
+	& S_i(x) = A_i(x-t_i)^3 + B_i(x-t_i)^2 + C_i(x-t_i) + y_i \\
+	& A_i = \frac{z_{i+1} - z_i}{6h_i} \\
+	& B_i = \frac{z_i}{2} \\
+	& C_i = -\frac{z_ih_i}{3} - \frac{z_{i+1}h_i}{6} + \frac{y_{i+1}-y_i}{h_i}
+\end{aligned}\]
+
+
+
+\section{Generating Option Prices}
+
+\subsection{IvyDB approach to implied volatility}
+
+In order to calculate option price for given strike and a given volatility we need to know the Zero Coupon Rate for the maturity of the option and the type of dividends. The approach for calculating option prices for indices and individual equities differs:
 \begin{enumerate}
-	\item Drop the constraint on $\tilde{a}$ altogether.
+	\item For indices IvyDB assumes that dividends are continuously compounded. They use a structural regression that utilizes put-call parity to get dividends yield. Table OPTIONM.IDXDVD provides such estimate for the dividend yield. 
+	\item For equities IvyDB uses either actual ex-dividend date if dividends were announced or it uses projected date using the frequency of dividends. Information about historical dividends and other distributions is provided in table OPTIONM.DISTRD
 \end{enumerate}
+
+Zero Coupon Rates for standard maturities is provided in Table OPTIONM.ZEROCD where IvyDB provides annualized continuously compounded interest rate. To get the interest rate for the maturity of the option IvyDB linearly interpolates interest rates for neighboring maturities. 
+
+\subsection{Continuously Compounded vs. Discrete Dividends}
+
+Value of an option with continuously compounded dividends at rate $q$ is
+\[\text{Call Price} = e^{-qT}\mathcal{N}(d_1)-e^{-rT}K\mathcal{N}(d_2)\]
+\[\text{Put Price} = e^{-rT}K\mathcal{N}(-d_2) - e^{-qT}\mathcal{N}(-d_1)\]
+\[\text{where } d_1 = \frac{\log(S_0/K) + (r - q + \frac{1}{2}\sigma^2)T}{\sigma\sqrt{T}}, d_2 = d_1 - \sigma\sqrt{T}\]
+Note that in the case of continuously compounded dividends forward price at time $0$ with maturity at time $T$ of an asset is given by
+\[F_0(T) = \frac{e^{-qT}S_0}{P_0(T)} = \frac{e^{-qT}S_0}{e^{-rT}}\]
+where $P_0(T)$ is the price of a ZCB. 
+
+In the case of discrete dividends between current time $0$ and the maturity of the option $T$ at points of time $\tau_1,\dots, \tau_N$ of size $D_1,\dots, D_N$
+\[F_0(T) = \frac{S_0 - \sum_{i}P_0(\tau_{i})D_i}{P_0(T)}\]
+To value an option for such asset we can use the formula from above replacing $q$ with $0$ and $S_0$ with $F_0(T)P_0(T)$ (see for example, Back (2017)). For the case of continuously compounded dividends $F_0(T)P_0(T) = e^{-qT}S_0$. Therefore, both continuously compounded and discrete dividends are cases of a more general formula. Option prices are given by standard Black-Scholes Formula with no dividends
+\[\text{Call Price} = \mathcal{N}(d_1)-e^{-rT}K\mathcal{N}(d_2)\]
+\[\text{Put Price} = e^{-rT}K\mathcal{N}(-d_2) - \mathcal{N}(-d_1)\]
+\[\text{where } d_1 = \frac{\log(S_0/K) + (r + \frac{1}{2}\sigma^2)T}{\sigma\sqrt{T}}, d_2 = d_1 - \sigma\sqrt{T}\]
+where we replace $S_0$ with $F_0(T)P_0(T)$ and $F_0(T)$ is calculated as
+\begin{enumerate}
+	\item in the case of continuously compounded dividednds as $\dfrac{e^{-qT}S_0}{P_0(T)}$
+	\item in the case of discrete dividends as $\dfrac{S_0 - \sum_{i}P_0(\tau_{i})D_i}{P_0(T)}$
+\end{enumerate}
+
+To get price of ZCB I use a table with ZCB rates from IvyDB and linearly interpolate them, if dividend is paid before the minimal maturity in the ZCB table I set the rate equal to the one for minimal maturity. \textbf{\color{red} Since the time to maturity is generally short this doesn't make a lot of difference}
+
+\section{Matching Prices}
+
+First, I calculate option prices using formulas from above given implied volatilities and compare them with midprices.
+	
 
 
 
@@ -148,8 +238,6 @@ Plug this into constraint to get
 \[\lambda = \left[R(X'X)^{-1}R'\right]^{-1}\left[b - R(X'X)^{-1}X'\tilde{v}\right]\]
 If we plug $\lambda$ back into the expression for $\beta$ we can get the final answer.
 
-
-	
 \end{document}
 
 

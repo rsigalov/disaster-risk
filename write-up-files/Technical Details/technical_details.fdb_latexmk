@@ -1,5 +1,5 @@
 # Fdb version 3
-["pdflatex"] 1548275427 "svi_fit.tex" "svi_fit.pdf" "svi_fit" 1548887121
+["pdflatex"] 1548945231 "technical_details.tex" "technical_details.pdf" "technical_details" 1548945232
   "/usr/local/texlive/2017/texmf-dist/fonts/map/fontname/texfonts.map" 1480098670 3287 e6b82fe08f5336d4d5ebc73fb1152e87 ""
   "/usr/local/texlive/2017/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm" 1480098698 1004 54797486969f23fa377b128694d548df ""
   "/usr/local/texlive/2017/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex8.tfm" 1480098698 988 bdf658c3bfc2d96d3c8b02cfc1c94c20 ""
@@ -208,13 +208,11 @@
   "/usr/local/texlive/2017/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1495593472 2350277 a699055bee05bf8a40b0504752487295 ""
   "/usr/local/texlive/2017/texmf-var/web2c/pdftex/pdflatex.fmt" 1495593487 4129592 0e6cfee100d68e6d96b92c0258f2ff73 ""
   "/usr/local/texlive/2017/texmf.cnf" 1495593465 577 2b71d4d888f9e5560b2e99985915a9fa ""
-  "svi_fit.aux" 1548275427 2241 ac4436af51a353af3285179d108e4057 ""
-  "svi_fit.out" 1548275427 1090 1874781a4366074d82f4bd1cdbf5ee26 ""
-  "svi_fit.tex" 1548275426 17259 9a27052306dcdf0d9be65ce31f055316 ""
+  "technical_details.aux" 1548945232 2241 ac4436af51a353af3285179d108e4057 ""
+  "technical_details.out" 1548945232 1090 1874781a4366074d82f4bd1cdbf5ee26 ""
+  "technical_details.tex" 1548945229 17259 9a27052306dcdf0d9be65ce31f055316 ""
   (generated)
-  "svi_fit.aux"
-  "svi_fit.out"
-  "/Users/rsigalov/Documents/PhD/disaster-risk-revision/write-up-files/svi_fit.pdf"
-  "svi_fit.log"
-  "/Users/rsigalov/Documents/PhD/disaster-risk-revision/write-up-files/svi_fit.log"
-  "svi_fit.pdf"
+  "technical_details.out"
+  "technical_details.log"
+  "technical_details.aux"
+  "technical_details.pdf"

@@ -8,6 +8,9 @@ struct OptionData
 	strikes
 	impl_vol
     T
+    int_rate # continuously compounded interest rate for
+             # date of option observation
+    forward # forward price calculated using dividends
 end
 
 struct SVIParams
@@ -18,6 +21,28 @@ struct SVIParams
     b
     obj
     opt_result
+end
+
+function interpolate_int_rate(date_obs, date_val, zcb)
+    opt_days_maturity = Dates.value(date_val - date_obs)
+
+    zcb_sub = zcb[zcb.date .== date_obs, :]
+    x = zcb_sub[:days]
+    y = zcb_sub[:rate]
+
+    if opt_days_maturity < minimum(x)
+        int_rate = minimum(x)
+    else
+        x1 = x[x .<= opt_days_maturity][end]
+        y1 = y[x .<= opt_days_maturity][end]
+
+        x2 = x[x .> opt_days_maturity][1]
+        y2 = y[x .> opt_days_maturity][1]
+
+        int_rate = y1 + (y2 - y1) * (opt_days_maturity - x1)/(x2-x1)
+    end
+
+    return int_rate/100
 end
 
 function fit_svi_bdbg_smile_grid(option::OptionData)
@@ -70,7 +95,8 @@ function fit_svi_bdbg_smile_grid(option::OptionData)
     a_opt = beta_opt[1]
     b_opt = beta_opt[2]/sigma_opt
 
-    return m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret
+    # Constructing SVIparams struct for outputting the result:
+    return SVIParams(m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret)
 end
 
 function fit_svi_bdbg_smile_global(option::OptionData)
@@ -110,7 +136,7 @@ function fit_svi_bdbg_smile_global(option::OptionData)
     a_opt = beta_opt[1]
     b_opt = beta_opt[2]/sigma_opt
 
-    return m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret
+    return SVIParams(m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret)
 end
 
 function fit_svi_var_rho_smile_grid(option::OptionData)
@@ -169,7 +195,7 @@ function fit_svi_var_rho_smile_grid(option::OptionData)
     a_opt = beta_opt[1]
     b_opt = beta_opt[2]
 
-    return m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret
+    return SVIParams(m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret)
 end
 
 function fit_svi_var_rho_smile_global(option::OptionData)
@@ -209,7 +235,7 @@ function fit_svi_var_rho_smile_global(option::OptionData)
     a_opt = beta_opt[1]
     b_opt = beta_opt[2]
 
-    return m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret
+    return SVIParams(m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret)
 end
 
 ################################################################################
@@ -548,7 +574,8 @@ function plot_vol_smile(option::OptionData, params::CubicSplineParams,
                           log_moneyness[end] + range_log_moneyness*0.05, 1000);
 
     ax[:scatter](log_moneyness, option.impl_vol, alpha = 0.25, c = "b")
-    ax[:plot](plot_range, map(calculateSplineVolInstance, plot_range), alpha = 0.25, c = "b")
+    ax[:plot](plot_range, map(calculateSplineVolInstance, plot_range), alpha = 0.25,
+              c = "r", linewidth = 1)
 
     ax[:set_title]("Title")
     ax[:set_xlabel]("log(Strike/Spot)")

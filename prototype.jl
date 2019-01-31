@@ -6,6 +6,7 @@ using Plots
 using PyPlot
 using SparseArrays
 using LinearAlgebra
+# using Interpolations
 # using Distributed
 include("funcs.jl")
 
@@ -29,7 +30,8 @@ for i_option = 1:max_options
     strikes = df_sub[:strike_price]./1000
     impl_vol = df_sub[:impl_volatility]
     spot = df_sub[:under_price][1]
-    T = Dates.value(exp_date-obs_date)
+    opt_days_maturity = Dates.value(exp_date-obs_date)
+    T = opt_days_maturity/252
 
     option_arr[i_option] = OptionData(secid, obs_date, exp_date, spot, strikes, impl_vol, T)
 end
@@ -37,29 +39,46 @@ end
 ################################################################
 # Fitting SVI interpolated volatility curves
 ################################################################
-svi_bdbg_grid_params_arr = Array{SVIParams, 1}(undef, max_options)
-@time for i_option = 1:max_options
-    res = fit_svi_bdbg_smile_grid(option_arr[i_option])
-    svi_bdbg_grid_params_arr[i_option] = SVIParams(res[1], res[2], res[3], res[4], res[5], res[6], res[7])
-end
 
-svi_bdbg_global_params_arr = Array{SVIParams, 1}(undef, max_options)
-@time for i_option = 1:max_options
-    res = fit_svi_bdbg_smile_global(option_arr[i_option])
-    svi_bdbg_global_params_arr[i_option] = SVIParams(res[1], res[2], res[3], res[4], res[5], res[6], res[7])
-end
+@time svi_bdbg_grid_params_arr = map(fit_svi_bdbg_smile_grid, option_arr[1:10])
 
-svi_var_rho_grid_params_arr = Array{SVIParams, 1}(undef, max_options)
-@time for i_option = 1:max_options
-    res = fit_svi_var_rho_smile_grid(option_arr[i_option])
-    svi_var_rho_grid_params_arr[i_option] = SVIParams(res[1], res[2], res[3], res[4], res[5], res[6], res[7])
-end
+@time svi_bdbg_global_params_arr = map(fit_svi_bdbg_smile_global, option_arr[1:10])
 
-svi_var_rho_global_params_arr = Array{SVIParams, 1}(undef, max_options)
-@time for i_option = 1:max_options
-    res = fit_svi_var_rho_smile_global(option_arr[i_option])
-    svi_var_rho_global_params_arr[i_option] = SVIParams(res[1], res[2], res[3], res[4], res[5], res[6], res[7])
-end
+@time svi_var_rho_grid_params_arr = map(fit_svi_var_rho_smile_grid, option_arr[1:10])
+
+@time svi_var_rho_global_params_arr = map(fit_svi_var_rho_smile_global, option_arr[1:10])
+
+@time svi_bdbg_grid_params_arr = map(fit_svi_bdbg_smile_grid, option_arr)
+
+@time svi_bdbg_global_params_arr = map(fit_svi_bdbg_smile_global, option_arr)
+
+@time svi_var_rho_grid_params_arr = map(fit_svi_var_rho_smile_grid, option_arr)
+
+@time svi_var_rho_global_params_arr = map(fit_svi_var_rho_smile_global, option_arr)
+
+# svi_bdbg_grid_params_arr = Array{SVIParams, 1}(undef, max_options)
+# @time for i_option = 1:max_options
+#     res = fit_svi_bdbg_smile_grid(option_arr[i_option])
+#     svi_bdbg_grid_params_arr[i_option] = SVIParams(res[1], res[2], res[3], res[4], res[5], res[6], res[7])
+# end
+#
+# svi_bdbg_global_params_arr = Array{SVIParams, 1}(undef, max_options)
+# @time for i_option = 1:max_options
+#     res = fit_svi_bdbg_smile_global(option_arr[i_option])
+#     svi_bdbg_global_params_arr[i_option] = SVIParams(res[1], res[2], res[3], res[4], res[5], res[6], res[7])
+# end
+#
+# svi_var_rho_grid_params_arr = Array{SVIParams, 1}(undef, max_options)
+# @time for i_option = 1:max_options
+#     res = fit_svi_var_rho_smile_grid(option_arr[i_option])
+#     svi_var_rho_grid_params_arr[i_option] = SVIParams(res[1], res[2], res[3], res[4], res[5], res[6], res[7])
+# end
+#
+# svi_var_rho_global_params_arr = Array{SVIParams, 1}(undef, max_options)
+# @time for i_option = 1:max_options
+#     res = fit_svi_var_rho_smile_global(option_arr[i_option])
+#     svi_var_rho_global_params_arr[i_option] = SVIParams(res[1], res[2], res[3], res[4], res[5], res[6], res[7])
+# end
 
 ################################################################
 # Using PyPlot to do the right subplots
@@ -67,9 +86,8 @@ end
 for i_option = 1:max_options
     print(i_option)
     print("\n")
-    # clf()
-    # cla()
-    print("fdasfa\n")
+
+    clf()
     fig = figure("An example", figsize=(10,8));
     PyPlot.axis("off")
 
@@ -87,7 +105,7 @@ for i_option = 1:max_options
 
     title_text = string("SP500, from ", option_arr[i_option].date, " to ", option_arr[i_option].exdate);
     suptitle(title_text);
-    filepath_to_save = string("images/julia_comparison/option_",i_option ,".pdf")
+    filepath_to_save = string("images/julia_comparison_SVX_only/option_",i_option ,".pdf")
     PyPlot.savefig(filepath_to_save, format="pdf", bbox_inches= "tight");
 end
 
@@ -98,8 +116,11 @@ end
 cubic_splines_params_arr = map(fitCubicSpline, option_arr)
 
 for i_option = 1:max_options
+    print(i_option)
+    print("\n")
+
     clf()
-    fig = figure("An example", figsize=(10,8));
+    fig = figure("An example", figsize=(6,4));
     ax = fig[:add_subplot](1,1,1);
     plot_vol_smile(option_arr[i_option], cubic_splines_params_arr[i_option], "", ax);
     title_text = string("SP500, from ", option_arr[i_option].date, " to ", option_arr[i_option].exdate);
@@ -184,3 +205,45 @@ secid = df_unique[:secid][i_option]
 df_sub = df[(df.date .== obs_date) .& (df.exdate .== exp_date) .& (df.secid .== secid), :]
 df_sub = sort!(df_sub, :strike_price)
 df_sub = unique(df_sub)
+
+
+
+for i = 1:max_options
+    print(option_arr[i].T)
+    print("\n")
+end
+
+
+############################################################
+# Generating risk-free rate by linearly interpolating ZCB
+# continuously compounded rates
+############################################################
+zcb = CSV.read("data/zcb_cont_comp_rate.csv"; datarow = 2, delim = ",")
+zcb = sort(zcb, [:date, :days])
+
+option = option_arr[1]
+option.date
+
+zcb_sub = zcb[zcb.date .== option.date, :]
+opt_mat_days = option.T*252
+
+# interpolation
+x = zcb_sub[:days]
+y = zcb_sub[:rate]
+
+x1 = x[x .< opt_mat_days][end]
+y1 = y[x .< opt_mat_days][end]
+
+x2 = x[x .> opt_mat_days][1]
+y2 = y[x .> opt_mat_days][1]
+
+int_rate = y1 + (y2-y1) * (opt_mat_days - x1)/(x2-x1)
+
+
+############################################################
+# Using mid-price and implied vol to infer what is the
+# dividend yield used by WRDS (IvyDB) in their calculation
+# of the implied volatility. We will do a numerical solution
+# to Black-Scholes formula to get q
+
+function BScall(S0, T, )

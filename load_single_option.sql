@@ -1,9 +1,5 @@
 with security_table as (
-    select
-        secid, date, close as under_price
-    from optionm.SECPRD
-    where date = opt_date
-    and secid = _secid_
+    xs
 )
 (
     select

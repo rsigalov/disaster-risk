@@ -102,8 +102,9 @@ _secid_ = '108105'
 query = query.replace('\n', ' ').replace('\t', ' ')
 query = query.replace('_secid_', _secid_)
 opt_data = db.raw_sql(query)
+opt_data = opt_data[opt_data['symbol'].str.contains('SPX ')]
 
-opt_data.to_csv('data/opt_data.csv', index = False)
+opt_data.to_csv('data/opt_data_2.csv', index = False)
 
 opt_data = pd.read_csv('data/opt_data.csv')
 

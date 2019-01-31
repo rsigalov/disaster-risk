@@ -135,37 +135,76 @@ end
 ####################################################
 # Semi-manually calculating BS prices:
 
-obs_date = df_unique[:date][1]
-exp_date = df_unique[:exdate][1]
-T = Dates.value(exp_date - obs_date)/365
-
-df_sub = df[(df.date .== obs_date) .& (df.exdate .== exp_date), :]
-df_sub = sort(df_sub, :strike_price)
-mid_price = df_sub[:mid_price][120]
-impl_vol = df_sub[:impl_volatility][120]
-spot = df_sub[:under_price][120]
-strike = df_sub[:strike_price][120]/1000
-
-zcb_sub = zcb[zcb.date .== obs_date, :]
-r1 = zcb_sub[:rate][3]
-days1 = zcb_sub[:days][3]
-r2 = zcb_sub[:rate][4]
-days2 = zcb_sub[:days][4]
-
-r = r1 + (r2 - r1)*(T*365 - days1)/(days2 - days1)
-r = r/100
-
-df_yield_sub = spx_div_yield[spx_div_yield.date .== obs_date, :]
-q = df_yield_sub[:rate][1]/100
-
-d1 = (log(spot/strike) + T*(r - q + 0.5*impl_vol)^2)/(impl_vol*sqrt(T))
-d2 = d1 - impl_vol*sqrt(T)
-
-put_price = exp(-r*T)*strike*cdf.(Normal(), -d2) - exp(-q*T)*spot*cdf.(Normal(), -d1)
-
-
+# obs_date = df_unique[:date][1]
+# exp_date = df_unique[:exdate][1]
+# T = Dates.value(exp_date - obs_date)/365
+#
+# df_sub = df[(df.date .== obs_date) .& (df.exdate .== exp_date), :]
+# df_sub = sort(df_sub, :strike_price)
+# mid_price = df_sub[:mid_price][120]
+# impl_vol = df_sub[:impl_volatility][120]
+# spot = df_sub[:under_price][120]
+# strike = df_sub[:strike_price][120]/1000
+#
+# zcb_sub = zcb[zcb.date .== obs_date, :]
+# r1 = zcb_sub[:rate][3]
+# days1 = zcb_sub[:days][3]
+# r2 = zcb_sub[:rate][4]
+# days2 = zcb_sub[:days][4]
+#
+# r = r1 + (r2 - r1)*(T*365 - days1)/(days2 - days1)
+# r = r/100
+#
+# df_yield_sub = spx_div_yield[spx_div_yield.date .== obs_date, :]
+# q = df_yield_sub[:rate][1]/100
+#
+# d1 = (log(spot/strike) + T*(r - q + 0.5*impl_vol)^2)/(impl_vol*sqrt(T))
+# d2 = d1 - impl_vol*sqrt(T)
+#
+# put_price = exp(-r*T)*strike*cdf.(Normal(), -d2) - exp(-q*T)*spot*cdf.(Normal(), -d1)
 
 
+
+
+# Testing functions for calculating Call/Put Option prices
+# given a strike and interpolated volatility smile
+option = option_arr[1]
+
+svi_params_1 = fit_svi_bdbg_smile_grid(option)
+svi_params_2 = fit_svi_bdbg_smile_global(option)
+svi_params_3 = fit_svi_var_rho_smile_grid(option)
+svi_params_4 = fit_svi_var_rho_smile_global(option)
+spline_params = fitCubicSpline(option)
+
+test_strike = 1725.0
+
+impl_vol_1 = calc_interp_impl_vol(option, svi_params_1, test_strike)
+impl_vol_2 = calc_interp_impl_vol(option, svi_params_2, test_strike)
+impl_vol_3 = calc_interp_impl_vol(option, svi_params_3, test_strike)
+impl_vol_4 = calc_interp_impl_vol(option, svi_params_4, test_strike)
+impl_vol_5 = calc_interp_impl_vol(option, spline_params, test_strike)
+
+call_price_1 = calc_option_value(option, svi_params_1, test_strike, "Call")
+call_price_2 = calc_option_value(option, svi_params_2, test_strike, "Call")
+call_price_3 = calc_option_value(option, svi_params_3, test_strike, "Call")
+call_price_4 = calc_option_value(option, svi_params_4, test_strike, "Call")
+call_price_5 = calc_option_value(option, spline_params, test_strike, "Call")
+
+put_price_1 = calc_option_value(option, svi_params_1, test_strike, "Put")
+put_price_2 = calc_option_value(option, svi_params_2, test_strike, "Put")
+put_price_3 = calc_option_value(option, svi_params_3, test_strike, "Put")
+put_price_4 = calc_option_value(option, svi_params_4, test_strike, "Put")
+put_price_5 = calc_option_value(option, spline_params, test_strike, "Put")
+
+
+################################################################
+# Functions to calculate intergrals required for V and IV
+################################################################
+
+
+
+
+################################################################
 
 function f(x)
     return cos(x)

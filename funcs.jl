@@ -583,3 +583,64 @@ function plot_vol_smile(option::OptionData, params::CubicSplineParams,
 
     return ax
 end
+
+
+
+################################################################
+# Functions to calculate Call/Put option prices for given strike
+################################################################
+
+# Function to calculate interpolated implied volatility for a
+# given OptionData and SVI interpolated volatility smile
+function calc_interp_impl_vol(option::OptionData, interp_params::SVIParams, strike)
+    spot = option.spot
+    log_moneyness = log.(strike/spot) # SVI was interpolated as a function of
+                                      # the log of the ratio of strike to
+                                      # current spot price of the underlying asset
+
+    m = interp_params.m
+    sigma = interp_params.sigma
+    rho = interp_params.rho
+    a = interp_params.a
+    b = interp_params.b
+
+    interp_impl_var = svi_smile(log_moneyness, m, sigma, rho, a, b)
+
+    # SVI is formulated with implie variance (sigma^2) as its value. Therefore,
+    # we need to take a square root before squaring it
+    return interp_impl_var .^ 0.5
+end
+
+# Function to calculate interpolated implied volatility for a
+# given OptionData and Cubic Spline interpolated volatility smile
+# it has the same name, but different argument type. Julia takes care of it
+function calc_interp_impl_vol(option::OptionData, interp_params::CubicSplineParams, strike)
+    log_moneyness = log.(strike/option.spot)
+
+    return calculateSplineVol(log_moneyness, interp_params)
+end
+
+# Function to calculate Call (Put) option value given OptionData and
+# an struct with interpolation parameters:
+function calc_option_value(option::OptionData, interp_params, strike, option_type)
+    # Getting implied vol for this particular strike given an interpolated
+    # volatility smile
+    impl_vol = calc_interp_impl_vol(option, interp_params, strike)
+
+    # Calculating Call (Put) option price
+    r = option.int_rate
+    F = option.forward
+    T = option.T
+
+    if option_type == "Call"
+        option_price = BS_call_price.(F * exp(-r*T), 0, r,
+                                      strike, impl_vol, T)
+    elseif option_type == "Put"
+        option_price = BS_put_price.(F * exp(-r*T), 0, r,
+                                     strike, impl_vol, T)
+    else
+        error("option_type should be Call or Put")
+    end
+
+    return option_price
+end

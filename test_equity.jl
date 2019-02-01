@@ -191,7 +191,9 @@ strikes = df_sub[:strike_price]./1000
 impl_vol = df_sub[:impl_volatility]
 spot = df_sub[:under_price][1]
 opt_days_maturity = Dates.value(exp_date-obs_date)
-T = opt_days_maturity/365 # not sure what to divide with
+T = (opt_days_maturity-1)/365 # It seems that you need to subtract 1 day
+                              # because the settlement is before the end
+                              # of the day
 
 ############################################################
 # Using data on ZCBs to inetrpolate risk-free rate:

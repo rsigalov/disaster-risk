@@ -1,12 +1,11 @@
+import numpy as np
+import pandas as pd
 import wrds
+import os
+
 db = wrds.Connection()
+os.chdir('/Users/rsigalov/Documents/PhD/disaster-risk-revision')
 
-
-"""
-Created on Thu Jan 17 22:23:53 2019
-
-@author: rsigalov
-"""
 
 query_check = """
 select *
@@ -105,6 +104,55 @@ and strike_price = 100000
 """
 query = query.replace('\n', ' ').replace('\t', ' ')
 df = db.raw_sql(query)
+
+############################################
+# Loading option data on dates right after the Lehman collapse
+# 1. Data on option prices:
+f=open("load_option_list.sql", "r")
+query_prices = f.read()
+
+start_date = "'2008-09-16'"
+end_date = "'2008-09-30'"
+secid = '108105'
+data_base = 'OPTIONM.OPPRCD2008'
+
+query_prices = query_prices.replace('\n', ' ').replace('\t', ' ')
+query_prices = query_prices.replace('_start_date_', start_date).replace('_end_date_', end_date)
+query_prices = query_prices.replace('_secid_', secid)
+query_prices = query_prices.replace('_data_base_', data_base)
+df_prices = db.raw_sql(query_prices)
+
+# 2. Data on index dividend yield:
+query_div = """
+select * 
+from OPTIONM.IDXDVD 
+where secid = '108105' 
+and date >= '2008-09-16'
+and date < '2008-09-30'
+"""
+query_div = query_div.replace('\n', ' ').replace('\t', ' ')
+df_div = db.raw_sql(query_div)
+
+# 3. Data on ZCB rates:
+query_zcb = """
+select *
+from OPTIONM.ZEROCD
+where date >= '2008-09-16'
+and date <= '2008-09-30'
+and days <= 100
+"""
+
+query_zcb = query_zcb.replace('\n', ' ').replace('\t', ' ')
+df_zcb = db.raw_sql(query_zcb)
+
+# 4. Saving data:
+df_prices.to_csv('data/opt_data_lehman.csv', index = False)
+df_div.to_csv('data/div_yield_lehman.csv', index = False)
+df_zcb.to_csv('data/zcb_rates_lehman.csv', index = False)
+
+
+
+
 
 
 

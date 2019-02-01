@@ -590,6 +590,27 @@ end
 # Functions to calculate Call/Put option prices for given strike
 ################################################################
 
+function BS_call_price(S0, q, r, K, sigma, T)
+    d1 = (log(S0/K) + (r - q + sigma^2/2)*T)/(sigma*sqrt(T))
+    d2 = d1 - sigma*sqrt(T)
+
+    p1 = exp(-q*T) * S0 * cdf.(Normal(), d1)
+    p2 = exp(-r*T) * K * cdf.(Normal(), d2)
+
+    return p1 - p2
+end
+
+# Calculating BS put price:
+function BS_put_price(S0, q, r, K, sigma, T)
+    d1 = (log(S0/K) + (r - q + sigma^2/2)*T)/(sigma*sqrt(T))
+    d2 = d1 - sigma*sqrt(T)
+
+    p1 = cdf.(Normal(), -d2) * K * exp(-r*T)
+    p2 = cdf.(Normal(), -d1) * S0 * exp(-q*T)
+
+    return p1 - p2
+end
+
 # Function to calculate interpolated implied volatility for a
 # given OptionData and SVI interpolated volatility smile
 function calc_interp_impl_vol(option::OptionData, interp_params::SVIParams, strike)
@@ -643,4 +664,28 @@ function calc_option_value(option::OptionData, interp_params, strike, option_typ
     end
 
     return option_price
+end
+
+
+# Function to calculate Risk-Neutral CDF and PDF:
+function calc_RN_CDF_PDF(option::OptionData, interp_params, strike)
+    spot = option.spot
+    r = option.int_rate
+    T = option.T
+
+    # function to calculate call option price for a specific
+    # option and interpolation parameters:
+    calc_specific_option_put_value = K -> calc_option_value(option, interp_params, K, "Put")
+
+    # First derivative of put(strike) function
+    der_1_put = K -> ForwardDiff.derivative(calc_specific_option_put_value, K)
+
+    # Second derivative of call(strike) function
+    der_2_put = K -> ForwardDiff.derivative(der_1_put, K)
+
+    # Calculaing CDF and PDF:
+    cdf_value = exp(r * T) * der_1_put(strike)
+    pdf_value = exp(r * T) * der_2_put(strike)
+
+    return cdf_value, pdf_value
 end

@@ -15,22 +15,23 @@ include("funcs.jl")
 # Loading data
 # df = CSV.read("data/opt_data.csv"; datarow = 2, delim = ",")
 # df = CSV.read("data/opt_data_2.csv"; datarow = 2, delim = ",")
-df = CSV.read("data/opt_data_lehman.csv"; datarow = 2, delim = ",")
+df = CSV.read("data/opt_data_3.csv"; datarow = 2, delim = ",")
+# df = CSV.read("data/opt_data_lehman.csv"; datarow = 2, delim = ",")
 df_unique = unique(df[:, [:secid,:date,:exdate]])
 df_unique = sort(df_unique, [:date, :exdate])
 
 # Loading data on interest rate to interpolate cont-compounded rate:
-# zcb = CSV.read("data/zcb_cont_comp_rate.csv"; datarow = 2, delim = ",")
-zcb = CSV.read("data/zcb_rates_lehman.csv"; datarow = 2, delim = ",")
+zcb = CSV.read("data/zcb_cont_comp_rate.csv"; datarow = 2, delim = ",")
+# zcb = CSV.read("data/zcb_rates_lehman.csv"; datarow = 2, delim = ",")
 zcb = sort(zcb, [:date, :days])
 
-# spx_div_yield = CSV.read("data/spx_dividend_yield.csv"; datarow = 2, delim = ",")
-spx_div_yield = CSV.read("data/div_yield_lehman.csv"; datarow = 2, delim = ",")
+spx_div_yield = CSV.read("data/spx_dividend_yield.csv"; datarow = 2, delim = ",")
+# spx_div_yield = CSV.read("data/div_yield_lehman.csv"; datarow = 2, delim = ",")
 spx_div_yield = sort(spx_div_yield, [:secid, :date])
 
 ################################################################
 # Filling an array with option data
-max_options = 10
+max_options = size(df_unique)[1]
 option_arr = Array{OptionData, 1}(undef, max_options)
 
 for i_option = 1:max_options
@@ -153,7 +154,7 @@ put_price_5 = calc_option_value(option, spline_params, test_strike, "Put")
 
 ####################################################
 # Plotting different figures:
-option = option_arr[1]
+option = option_arr[31]
 
 # Fitting volatility smiles
 svi_params_1 = fit_svi_bdbg_smile_grid(option)
@@ -217,6 +218,7 @@ for i = 1:length(param_list)
     ax1[:set_title]("Interpolated Volatility (sigma)")
     ax1[:set_xlabel]("Strike")
     ax1[:set_ylabel]("")
+    legend()
 
     # 2. OTM option prices
     calc_option_value_put = K -> calc_option_value(option, param_list[i], K, "Put")
@@ -230,6 +232,7 @@ for i = 1:length(param_list)
     ax2[:set_title]("OTM Option Prices")
     ax2[:set_xlabel]("Strike")
     ax2[:set_ylabel]("")
+    legend()
 
     # 3. Risk-Neutral CDF
     calc_RN_CDF_lambda = K -> calc_RN_CDF_PDF(option, param_list[i], K)[1]
@@ -241,6 +244,7 @@ for i = 1:length(param_list)
     ax3[:set_title]("Risk-Neutral CDF")
     ax3[:set_xlabel]("Strike")
     ax3[:set_ylabel]("")
+    legend()
 
     # 4. Risk-Neutral PDF
     calc_RN_PDF_lambda = K -> calc_RN_CDF_PDF(option, param_list[i], K)[2]
@@ -252,14 +256,14 @@ for i = 1:length(param_list)
     ax4[:set_title]("Risk-Neutral PDF")
     ax4[:set_xlabel]("Strike")
     ax4[:set_ylabel]("")
+    legend()
 end
 
 title_text = string("S&P 500 option: from ", option.date, " to ", option.exdate);
 suptitle(title_text);
-legend()
+# legend()
 # filename = string("images/compare_actual_and_calculated_prices/mid_price_BS_index_",i_option,".pdf")
-PyPlot.savefig("example_lehman_no_spline.pdf", format = "pdf",x_inches = "tight");
-
+PyPlot.savefig("example_2017.pdf", format = "pdf",x_inches = "tight");
 
 ################################################################
 # Checking fit of SVI volatility smile model in the data
@@ -297,39 +301,231 @@ for i_option = 1:10
     PyPlot.savefig(filepath_to_save, format="pdf", bbox_inches= "tight");
 end
 
+################################################################
+# Functions to calculate integrands required for calculating
+# integrals for V and IV
+################################################################
+
+function calc_variation_and_jump_risk(option::OptionData, interp_params)
+    spot = option.spot
+    r = option.int_rate
+    T = option.T
+
+    # function to calculate call option price for a specific
+    # option and interpolation parameters:
+    calc_option_value_put = K -> calc_option_value(option, interp_params, K, "Put")
+    calc_option_value_call = K -> calc_option_value(option, interp_params, K, "Call")
+
+    # I will make a change of variables to integrate all variables from 0 to 1.
+    # This is necessary for inifinite limit integrals but not necessary for
+    # integrals with finite limit. Nevertheless, to make everything similar
+    # I will do a change of variables for all integrals.
+
+    # First integrxnd of V(0, T) -- value of a quadratic claim:
+    V1_raw = K -> 2 * (1 - log(K/spot)) * calc_option_value_call(K)/K^2
+    V1 = t -> V1_raw(spot + t/(1-t))/(1-t)^2
+
+    # Second integrand of V(0, T) -- value of a quadratic claim:
+    V2_raw = K -> 2 * (1 + log(spot/K)) * calc_option_value_put(K)/K^2
+    V2 = t -> V2_raw(spot * t) * spot
+
+    # First Integrand of W(0, T) -- value of a cubic claim
+    W1_raw = K -> (6 * log(K/spot) - 3 * (log(K/spot))^2) * calc_option_value_call(K)/K^2
+    W1 = t -> W1_raw(spot + t/(1-t))/(1-t)^2
+
+    # Second Integrand of W(0, T) -- value of a cubic claim
+    W2_raw = K -> (6 * log(spot/K) + 3 * log(spot/K)^2) * calc_option_value_put(K)/K^2
+    W2 = t -> W2_raw(spot * t) * spot
+
+    # First Integrand of X(0, T) -- value of a quatric claim
+    X1_raw = K -> (12 * log(K/spot)^2 - 4 * log(K/spot)^3) * calc_option_value_call(K)/K^2
+    X1 = t -> X1_raw(spot + t/(1-t))/(1-t)^2
+
+    # Second Integrand of X(0, T) -- value of a quatric claim
+    X2_raw = K -> (12 * log(spot/K)^2 + 4 * log(spot/K)^3) * calc_option_value_put(K)/K^2
+    X2 = t -> X2_raw(spot * t) * spot
+
+    # First Integrand of e^{-rT}IV
+    IV1_raw = K -> calc_option_value_call(K)/K^2
+    IV1 = t -> IV1_raw(spot + t/(1-t))/(1-t)^2
+
+    # Second Integrand of e^{-rT}IV
+    IV2_raw = K -> calc_option_value_put(K)/K^2
+    IV2 = t -> IV2_raw(spot * t) * spot
+
+    V = hquadrature(V1, 0, 1)[1] + hquadrature(V2, 0, 1)[1]
+    W = hquadrature(W1, 0, 1)[1] + hquadrature(W2, 0, 1)[1]
+    X = hquadrature(X1, 0, 1)[1] + hquadrature(X2, 0, 1)[1]
+
+    mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+
+    variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
+
+    integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, 0, 1)[1] + hquadrature(IV2, 0, 1)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+
+    D = variation - integrated_variation
+
+    return variation, integrated_variation, D
+end
+
+option = option_arr[3]
+
+svi_params_1 = fit_svi_bdbg_smile_grid(option)
+svi_params_2 = fit_svi_bdbg_smile_global(option)
+svi_params_3 = fit_svi_var_rho_smile_grid(option)
+svi_params_4 = fit_svi_var_rho_smile_global(option)
+spline_params = fitCubicSpline(option)
+
+param_list = [svi_params_1, svi_params_2, svi_params_3, svi_params_4, spline_params]
+
+calc_variation_and_jump_risk(option, param_list[1])
+calc_variation_and_jump_risk(option, param_list[2])
+calc_variation_and_jump_risk(option, param_list[3])
+calc_variation_and_jump_risk(option, param_list[4])
+calc_variation_and_jump_risk(option, param_list[5])
+
+############################################################
+# Generating a bunch of characteristics for many options
+
+var_chars = DataFrame(date = [], exdate = [], fit_type = [], sigmaNTM = [], prob_40_perc = [],
+                       prob_2sigma = [], prob_5sigma = [], put_2sigma = [],
+                       put_5sigma = [], V = [], IV = [], D = [], high_CDF = [])
+fit_type_list = ["rho=0, grid", "rho=0, global", "VarRho, grid", "VarRho, global", "Spline"]
+
+for i = 30:35
+    print("Evaluating option ")
+    print(i)
+    print("\n")
+    option = option_arr[i]
+    spot = option.spot
+
+    # Fitting different volatility smile functions
+    svi_params_1 = fit_svi_bdbg_smile_grid(option)
+    svi_params_2 = fit_svi_bdbg_smile_global(option)
+    svi_params_3 = fit_svi_var_rho_smile_grid(option)
+    svi_params_4 = fit_svi_var_rho_smile_global(option)
+    spline_params = fitCubicSpline(option)
+
+    param_list = [svi_params_1, svi_params_2, svi_params_3, svi_params_4, spline_params]
+
+    NTM_dist = 0.05
+    NTM_index = (option.strikes .<= option.spot*(1.0 + NTM_dist)) .&
+                (option.strikes .>= option.spot*(1.0 - NTM_dist))
+    sigma_NTM = mean(option.impl_vol[NTM_index])
+
+    for j = 1:length(fit_type_list)
+        calc_RN_CDF_lambda = K -> calc_RN_CDF_PDF(option, param_list[j], K)[1]
+        prob_40_perc = calc_RN_CDF_lambda(spot * (1 - 0.4))
+        prob_2sigma = spot*(1 - 2*sigma_NTM) > 0 ? calc_RN_CDF_lambda(spot * (1 - 2 * sigma_NTM)) : missing
+        prob_5sigma = spot*(1 - 5*sigma_NTM) > 0 ? calc_RN_CDF_lambda(spot * (1 - 5 * sigma_NTM)) : missing
+
+        calc_option_value_put = K -> calc_option_value(option, param_list[j], K, "Put")
+        put_2sigma = spot*(1 - 2*sigma_NTM) > 0 ? calc_option_value_put(spot * (1 - 2*sigma_NTM)) : missing
+        put_5sigma = spot*(1 - 5*sigma_NTM) > 0 ? calc_option_value_put(spot * (1 - 5*sigma_NTM)) : missing
+
+        V, IV, D = calc_variation_and_jump_risk(option, param_list[j])
+
+        # Filling the table:
+        to_append = DataFrame(date = [option.date], exdate = [option.exdate],
+            fit_type = [fit_type_list[j]], sigmaNTM = [sigma_NTM],
+            prob_40_perc = [prob_40_perc],
+            prob_2sigma = [prob_2sigma], prob_5sigma = [prob_5sigma],
+            put_2sigma = [put_2sigma], put_5sigma = [put_5sigma],
+            V = [V], IV = [IV], D = [D], high_CDF = [calc_RN_CDF_lambda(3000)])
+
+        append!(var_chars, to_append)
+    end
+end
+
+CSV.write("output/chars_2.csv",  var_chars)
 
 
-# ################################################################
-# # Functions to calculate integrands required for calculating
-# # integrals for V and IV
-# ################################################################
-#
-# spot = option.spot
-#
-# # function to calculate call option price for a specific
-# # option and interpolation parameters:
-# function calc_specific_option_call_value(K)
-#     return calc_option_value(option, svi_params_1, K, "Call")
-# end
-#
-# function calc_specific_option_put_value(K)
-#     return calc_option_value(option, svi_params_1, K, "Put")
-# end
-#
-# # First integrand of V(0,T):
-# function V1(K)
-#     return 2 * (1 - log(K/spot)) * calc_specific_option_call_value(K)/K^2
-# end
-#
-# # First integrand of V(0,T):
-# function V2(K)
-#     return 2 * (1 + log(spot/K)) * calc_specific_option_call_value(K)/K^2
-# end
-#
-# ################################################################
-#
-# function f(x)
-#     return cos(x)
-# end
-#
-# hquadrature(f, -1, 100)
+################################################################
+# Calculating VIX using the methodology from their whitepaper
+# https://www.cboe.com/micro/vix/vixwhite.pdf
+################################################################
+# 1. Comparing actual mid-prices and BS calculated prices using
+# reported implied volatility
+option = option_arr[13]
+r = option.int_rate
+F = option.forward
+T = option.T
+
+svi_params_1 = fit_svi_bdbg_smile_grid(option)
+svi_params_2 = fit_svi_bdbg_smile_global(option)
+svi_params_3 = fit_svi_var_rho_smile_grid(option)
+svi_params_4 = fit_svi_var_rho_smile_global(option)
+interp_param_list = [svi_params_1, svi_params_2, svi_params_3, svi_params_4]
+
+calc_option_value_put = K -> calc_option_value(option, interp_params, K, "Put")
+calc_option_value_call = K -> calc_option_value(option, interp_params, K, "Call")
+
+strikes_puts = option.strikes[option.strikes .<= option.spot]
+strikes_calls = option.strikes[option.strikes .> option.spot]
+
+impl_vol_puts = option.impl_vol[option.strikes .<= option.spot]
+impl_vol_calls = option.impl_vol[option.strikes .> option.spot]
+
+# 1. calculating prices for each strikes and implied volatility:
+calc_prices_puts = BS_put_price.(F * exp(-r*T), 0, r, strikes_puts, impl_vol_puts, T)
+calc_prices_calls = BS_call_price.(F * exp(-r*T), 0, r, strikes_calls, impl_vol_calls, T)
+
+df_sub = df[(df.date .== option.date) .&
+                 (df.exdate .== option.exdate) .&
+                 (df.secid .== option.secid), :]
+df_sub_puts = sort(df_sub[df_sub.cp_flag .== "P", :], :strike_price)
+df_sub_calls = sort(df_sub[df_sub.cp_flag .== "C", :], :strike_price)
+
+actual_prices_puts = df_sub_puts[:mid_price]
+actual_prices_calls = df_sub_calls[:mid_price]
+
+
+# 2. Calculating VIX measure:
+strikes = option.strikes
+opt_prices = [calc_prices_puts; calc_prices_calls]
+n = length(opt_prices)
+deltaK = zeros(n)
+deltaK[1] = (strikes[2]-strikes[1])/2
+deltaK[n] = (strikes[n]-strikes[n-1])/2
+deltaK[2:(n-1)] = (strikes[3:n] - strikes[1:(n-2)])./2
+
+sigma2 = (2/T)*exp(r*T)*sum(opt_prices .* deltaK./strikes.^2) - (1/T)*(F/option.spot-1)^2
+VIX = sqrt(sigma2) * 100
+
+
+# 3. Calculating integral only "in-sample", i.e. the limits of integration are
+# from the first to the last strike
+calc_option_value_put = K -> calc_option_value(option, interp_param_list[1], K, "Put")
+calc_option_value_call = K -> calc_option_value(option, interp_param_list[1], K, "Call")
+
+IV1_raw = K -> calc_option_value_call(K)/K^2
+IV2_raw = K -> calc_option_value_put(K)/K^2
+
+spot = option.spot
+min_K = minimum(strikes)
+max_K = maximum(strikes)
+IV_limit = (2*exp(r*T)/T) * (hquadrature(IV1_raw, spot, max_K)[1] + hquadrature(IV2_raw, min_K, spot)[1]) - (2/T)*(exp(r*T)-1-r*T)
+VIX_like_IV_limit = sqrt(IV_limit) * 100
+
+IV1 = t -> IV1_raw(spot + t/(1-t))/(1-t)^2
+IV2 = t -> IV2_raw(spot * t) * spot
+IV = (exp(r*T)*2/T) * (hquadrature(IV1, 0, 1)[1] + hquadrature(IV2, 0, 1)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+VIX_like_IV = sqrt(IV) * 100
+
+V, IV, D = calc_variation_and_jump_risk(option, interp_param_list[1])
+
+# 4. Getting options with maturity close to 30 days
+unique_dates = unique(df_unique[:date])
+option_dates_arr = map(x -> x.date, option_arr)
+
+
+for i = 1:length(unique_dates)
+    current_date = unique_dates[i]
+    current_option_arr = option_arr[map(x -> x.date, option_arr) .== current_date]
+
+    dist_to_30 = abs.(map(x -> x.T*365, current_option_arr) .- 30)
+    findmin(dist_to_30)
+end
+
+
+option_arr = Array{OptionData, 1}(undef, max_options)

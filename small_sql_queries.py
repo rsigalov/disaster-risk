@@ -151,7 +151,20 @@ df_div.to_csv('data/div_yield_lehman.csv', index = False)
 df_zcb.to_csv('data/zcb_rates_lehman.csv', index = False)
 
 
+f=open("load_option_list.sql", "r")
+query_prices = f.read()
 
+start_date = "'2017-01-01'"
+end_date = "'2017-01-31'"
+secid = "108105"
+data_base = "OPTIONM.OPPRCD2017"
+
+query_prices = query_prices.replace('\n', ' ').replace('\t', ' ')
+query_prices = query_prices.replace('_start_date_', start_date).replace('_end_date_', end_date)
+query_prices = query_prices.replace('_secid_', secid)
+query_prices = query_prices.replace('_data_base_', data_base)
+df_prices = db.raw_sql(query_prices)
+df_prices.to_csv("data/opt_data_3.csv", index = False)
 
 
 

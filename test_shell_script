@@ -1,0 +1,7 @@
+sudo python load_zcb.py
+
+sudo python loading_data.py -s 111690.0  -b 2005 -e 2005 -o equity_test
+sudo julia -p 7 fit_smiles.jl equity_test
+sudo julia -p 7 est_parameters.jl equity_test
+sudo rm data/raw_data/opt_data_equity_test.csv
+sudo rm data/raw_data/dist_data_equity_test.csv

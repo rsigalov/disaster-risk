@@ -6,7 +6,8 @@ print("\n")
 
 print("\n ---- Loading libraries ----\n")
 
-using DataFrames # self explanatory
+# @everywhere using DataFrames # self explanatory
+using DataFrames
 @everywhere using NLopt # Package to perform numerical optiimization
 @everywhere using LinearAlgebra # Package with some useful functions
 @everywhere using Distributions # Package for normal CDF
@@ -21,10 +22,24 @@ using Dates
 print("\n--- Loading Data ----\n")
 
 index_to_append = ARGS[1]
+# index_to_append = "equity_1"
 
 # Loading data on options:
-opt_data_filepath = string("data/opt_data_", index_to_append, ".csv")
+opt_data_filepath = string("data/raw_data/opt_data_", index_to_append, ".csv")
 df = CSV.read(opt_data_filepath; datarow = 2, delim = ",")
+df_size = size(df)[1]
+print(string("\n--- Total size of dataframe is ", df_size, " rows ---\n"))
+
+if length(ARGS) > 1
+    df_limit = parse(Int,ARGS[2])
+    if df_limit > df_size
+        df_limit = df_size
+    end
+    print(string("\n--- Limiting estimation to ", df_limit, " rows ---\n"))
+else
+    df_limit = df_size
+end
+
 
 # Calculating number of options per secid, observation date and expiration date
 df_unique_N = by(df, [:secid, :date, :exdate], number = :cp_flag => length)
@@ -38,23 +53,23 @@ num_options = size(df_unique)[1]
 print(string("\nHave ", num_options, " smiles in total to fit\n"))
 
 # Loading data on dividend distribution:
-dist_data_filepath = string("data/dist_data_", index_to_append, ".csv")
+dist_data_filepath = string("data/raw_data/dist_data_", index_to_append, ".csv")
 dist_hist = CSV.read(dist_data_filepath; datarow = 2, delim = ",")
 
 # Loading data on interest rate to interpolate cont-compounded rate:
-zcb = CSV.read("data/zcb_data.csv"; datarow = 2, delim = ",")
+zcb = CSV.read("data/raw_data/zcb_data.csv"; datarow = 2, delim = ",")
 zcb = sort(zcb, [:date, :days])
 
 print("\n--- Generating array with options ----\n")
 option_arr = Array{OptionData, 1}(undef, num_options)
 i_option = 0
 
-for subdf in groupby(df[1:100000,:], [:secid, :date, :exdate])
+df = sort(df, cols = [:secid, :date, :exdate, :strike_price])
+for subdf in groupby(df[1:df_limit, :], [:secid, :date, :exdate])
     if i_option % 2500 == 0
         print(string("Preparing option smile ", i_option, " out of ", num_options, "\n"))
     end
     if size(subdf)[1] >= 5 # include only smiles with at least 5 observations:
-
         obs_date = subdf.date[1]
         exp_date = subdf.exdate[1]
         secid = subdf.secid[1]
@@ -75,7 +90,7 @@ for subdf in groupby(df[1:100000,:], [:secid, :date, :exdate])
         interp_rate = Spline1D(x, y, k = 1) # creating linear interpolation object
                                             # that we can use later as well
 
-        int_rate = interp_rate(opt_days_maturity - 1)./100
+        int_rate = interp_rate(opt_days_maturity - 1)/100
 
         index_before = (dist_hist.secid .== secid) .& (dist_hist.ex_date .<= exp_date) .& (dist_hist.ex_date .>= obs_date)
         if count(index_before) == 0
@@ -106,7 +121,7 @@ for subdf in groupby(df[1:100000,:], [:secid, :date, :exdate])
         df_filter = subdf[subdf.mid_price .>= [put_min; call_min],:]
         strikes = df_filter.strike_price./1000
         impl_vol = df_filter.impl_volatility
-        if length(strikes) >= 5
+        if (length(strikes) >= 5) & (forward > 0)
             global i_option += 1
             option_arr[i_option] = OptionData(secid, obs_date, exp_date, spot, strikes,
                                               impl_vol, T, int_rate, forward)
@@ -119,6 +134,7 @@ num_options = length(option_arr) # Updating number of smiles to count only those
                                  # that have at least 5 options available after
                                  # additional present value filter
 
+print(string("\n--- ", num_options, " left after processing ---\n"))
 print("\n--- Doing stuff ---")
 print("\n--- Fitting SVI Volatility Smile ---\n")
 print("\n--- First Pass ---\n")
@@ -126,46 +142,44 @@ print("\n--- First Pass ---\n")
 print("\n--- Second Pass ---\n")
 @time svi_arr = pmap(fit_svi_zero_rho_global, option_arr)
 
-print("\n--- Estimating parameters ---\n")
-print("\n--- First Pass ---\n")
-@time tmp = pmap(estimate_parameters, option_arr[1:2], svi_arr[1:2])
-print("\n--- Second Pass ---\n")
-@time ests = pmap(estimate_parameters, option_arr[1:1000], svi_arr[1:1000])
-
-print("\n--- Outputting Data ---\n")
-df_out = DataFrame(secid = map(x -> x.secid, option_arr),
-                   date = map(x -> x.date, option_arr),
-                   T = map(x -> x.T, option_arr),
-                   V = map(x -> x[1], ests),
-                   IV = map(x -> x[2], ests),
-                   V_in_sample = map(x -> x[3], ests),
-                   IV_in_sample = map(x -> x[4], ests),
-                   V_5_5 = map(x -> x[5], ests),
-                   IV_5_5 = map(x -> x[6], ests),
-                   V_otm = map(x -> x[7], ests),
-                   IV_otm = map(x -> x[8], ests),
-                   V_otm_in_sample = map(x -> x[9], ests),
-                   IV_otm_in_sample = map(x -> x[10], ests),
-                   V_otm_5_5 = map(x -> x[11], ests),
-                   IV_otm_5_5 = map(x -> x[12], ests),
-                   V_otm1 = map(x -> x[13], ests),
-                   IV_otm1 = map(x -> x[14], ests),
-                   V_otm1_in_sample = map(x -> x[15], ests),
-                   IV_otm1_in_sample = map(x -> x[16], ests),
-                   V_otm1_5_5 = map(x -> x[17], ests),
-                   IV_otm1_5_5 = map(x -> x[18], ests),
-                   rn_prob_2sigma = map(x -> x[19], ests),
-                   rn_prob_40ann = map(x -> x[20], ests))
-
-CSV.write(string("output/var_ests_", index_to_append, ".csv"), df_out)
-
-print("\n--- Done ---\n")
+print("\n--- Saving required data to estimate parameters ---\n")
 
 
+# Calculating near the money sigma:
+function calc_NTM_sigma(option::OptionData)
+    NTM_dist = 0.05
+    NTM_index = (option.strikes .<= option.spot*(1.0 + NTM_dist)) .&
+                (option.strikes .>= option.spot*(1.0 - NTM_dist))
+    if sum(NTM_index) == 0
+        if minimum(option.strikes) > option.spot
+            sigma_NTM = option.impl_vol[1]
+        elseif maximum(option.strikes) < option.spot
+            sigma_NTM = option.impl_vol[end]
+        else
+            sigma_NTM = option.impl_vol[option.strikes .<= option.spot][end]
+        end
+    else
+        sigma_NTM = mean(option.impl_vol[NTM_index]) * sqrt(option.T)
+    end
+    return sigma_NTM
+end
 
-################################################################################
-# Testing stuff
-################################################################################
+# Saving SVI parameters into a dataset:
+svi_data_out = DataFrame(secid = map(x -> x.secid, option_arr),
+                         obs_date = map(x -> x.date, option_arr),
+                         exp_date = map(x -> x.exdate, option_arr),
+                         spot = map(x -> x.spot, option_arr),
+                         T = map(x -> x.T, option_arr),
+                         r = map(x -> x.int_rate, option_arr),
+                         F = map(x -> x.forward, option_arr),
+                         sigma_NTM = map(x -> calc_NTM_sigma(x), option_arr),
+                         min_K = map(x -> minimum(x.strikes), option_arr),
+                         max_K = map(x -> maximum(x.strikes), option_arr),
+                         m = map(x -> x.m, svi_arr),
+                         sigma = map(x -> x.sigma, svi_arr),
+                         a = map(x -> x.a, svi_arr),
+                         b = map(x -> x.b, svi_arr),
+                         obj = map(x -> x.obj, svi_arr),
+                         opt_out = map(x -> x.opt_result, svi_arr))
 
-plot_vol_smile(option::OptionData, params::SVIParams,
-                         label, ax = Missing, col_scatter = "b", col_line = "r")
+CSV.write(string("data/raw_data/svi_params_", index_to_append, ".csv"), svi_data_out)

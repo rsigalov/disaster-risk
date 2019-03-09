@@ -16,16 +16,19 @@ include("funcs.jl")
 # df = CSV.read("data/opt_data.csv"; datarow = 2, delim = ",")
 # df = CSV.read("data/opt_data_2.csv"; datarow = 2, delim = ",")
 df = CSV.read("data/opt_data_3.csv"; datarow = 2, delim = ",")
+# df = CSV.read("data/opt_data_2008.csv"; datarow = 2, delim = ",")
 # df = CSV.read("data/opt_data_lehman.csv"; datarow = 2, delim = ",")
 df_unique = unique(df[:, [:secid,:date,:exdate]])
 df_unique = sort(df_unique, [:date, :exdate])
 
 # Loading data on interest rate to interpolate cont-compounded rate:
 zcb = CSV.read("data/zcb_cont_comp_rate.csv"; datarow = 2, delim = ",")
+# zcb = CSV.read("data/zcb_cont_comp_rate_2008.csv"; datarow = 2, delim = ",")
 # zcb = CSV.read("data/zcb_rates_lehman.csv"; datarow = 2, delim = ",")
 zcb = sort(zcb, [:date, :days])
 
 spx_div_yield = CSV.read("data/spx_dividend_yield.csv"; datarow = 2, delim = ",")
+# spx_div_yield = CSV.read("data/spx_dividend_yield_2008.csv"; datarow = 2, delim = ",")
 # spx_div_yield = CSV.read("data/div_yield_lehman.csv"; datarow = 2, delim = ",")
 spx_div_yield = sort(spx_div_yield, [:secid, :date])
 
@@ -35,6 +38,8 @@ max_options = size(df_unique)[1]
 option_arr = Array{OptionData, 1}(undef, max_options)
 
 for i_option = 1:max_options
+    print(i_option)
+    print("\n")
     obs_date = df_unique[:date][i_option]
     exp_date = df_unique[:exdate][i_option]
     secid = df_unique[:secid][i_option]
@@ -48,7 +53,7 @@ for i_option = 1:max_options
     impl_vol = df_sub[:impl_volatility]
     spot = df_sub[:under_price][1]
     opt_days_maturity = Dates.value(exp_date - obs_date)
-    T = (opt_days_maturity-1)/365 # It seems that you need to subtract 1 day
+    T = (opt_days_maturity - 1)/365 # It seems that you need to subtract 1 day
                                   # because the settlement is before the end
                                   # of the day
 
@@ -263,7 +268,7 @@ title_text = string("S&P 500 option: from ", option.date, " to ", option.exdate)
 suptitle(title_text);
 # legend()
 # filename = string("images/compare_actual_and_calculated_prices/mid_price_BS_index_",i_option,".pdf")
-PyPlot.savefig("example_2017.pdf", format = "pdf",x_inches = "tight");
+PyPlot.savefig("example_2017.pdf", format = "pdf", x_inches = "tight");
 
 ################################################################
 # Checking fit of SVI volatility smile model in the data
@@ -386,7 +391,6 @@ calc_variation_and_jump_risk(option, param_list[5])
 
 ############################################################
 # Generating a bunch of characteristics for many options
-
 var_chars = DataFrame(date = [], exdate = [], fit_type = [], sigmaNTM = [], prob_40_perc = [],
                        prob_2sigma = [], prob_5sigma = [], put_2sigma = [],
                        put_5sigma = [], V = [], IV = [], D = [], high_CDF = [])
@@ -446,86 +450,316 @@ CSV.write("output/chars_2.csv",  var_chars)
 ################################################################
 # 1. Comparing actual mid-prices and BS calculated prices using
 # reported implied volatility
-option = option_arr[13]
-r = option.int_rate
-F = option.forward
-T = option.T
-
-svi_params_1 = fit_svi_bdbg_smile_grid(option)
-svi_params_2 = fit_svi_bdbg_smile_global(option)
-svi_params_3 = fit_svi_var_rho_smile_grid(option)
-svi_params_4 = fit_svi_var_rho_smile_global(option)
-interp_param_list = [svi_params_1, svi_params_2, svi_params_3, svi_params_4]
-
-calc_option_value_put = K -> calc_option_value(option, interp_params, K, "Put")
-calc_option_value_call = K -> calc_option_value(option, interp_params, K, "Call")
-
-strikes_puts = option.strikes[option.strikes .<= option.spot]
-strikes_calls = option.strikes[option.strikes .> option.spot]
-
-impl_vol_puts = option.impl_vol[option.strikes .<= option.spot]
-impl_vol_calls = option.impl_vol[option.strikes .> option.spot]
-
-# 1. calculating prices for each strikes and implied volatility:
-calc_prices_puts = BS_put_price.(F * exp(-r*T), 0, r, strikes_puts, impl_vol_puts, T)
-calc_prices_calls = BS_call_price.(F * exp(-r*T), 0, r, strikes_calls, impl_vol_calls, T)
-
-df_sub = df[(df.date .== option.date) .&
-                 (df.exdate .== option.exdate) .&
-                 (df.secid .== option.secid), :]
-df_sub_puts = sort(df_sub[df_sub.cp_flag .== "P", :], :strike_price)
-df_sub_calls = sort(df_sub[df_sub.cp_flag .== "C", :], :strike_price)
-
-actual_prices_puts = df_sub_puts[:mid_price]
-actual_prices_calls = df_sub_calls[:mid_price]
-
-
-# 2. Calculating VIX measure:
-strikes = option.strikes
-opt_prices = [calc_prices_puts; calc_prices_calls]
-n = length(opt_prices)
-deltaK = zeros(n)
-deltaK[1] = (strikes[2]-strikes[1])/2
-deltaK[n] = (strikes[n]-strikes[n-1])/2
-deltaK[2:(n-1)] = (strikes[3:n] - strikes[1:(n-2)])./2
-
-sigma2 = (2/T)*exp(r*T)*sum(opt_prices .* deltaK./strikes.^2) - (1/T)*(F/option.spot-1)^2
-VIX = sqrt(sigma2) * 100
-
+# option = option_arr[13]
+# r = option.int_rate
+# F = option.forward
+# T = option.T
+#
+# svi_params_1 = fit_svi_bdbg_smile_grid(option)
+# svi_params_2 = fit_svi_bdbg_smile_global(option)
+# svi_params_3 = fit_svi_var_rho_smile_grid(option)
+# svi_params_4 = fit_svi_var_rho_smile_global(option)
+# interp_param_list = [svi_params_1, svi_params_2, svi_params_3, svi_params_4]
+#
+# calc_option_value_put = K -> calc_option_value(option, interp_params, K, "Put")
+# calc_option_value_call = K -> calc_option_value(option, interp_params, K, "Call")
+#
+# strikes_puts = option.strikes[option.strikes .<= option.spot]
+# strikes_calls = option.strikes[option.strikes .> option.spot]
+#
+# impl_vol_puts = option.impl_vol[option.strikes .<= option.spot]
+# impl_vol_calls = option.impl_vol[option.strikes .> option.spot]
+#
+# # 1. calculating prices for each strikes and implied volatility:
+# calc_prices_puts = BS_put_price.(F * exp(-r*T), 0, r, strikes_puts, impl_vol_puts, T)
+# calc_prices_calls = BS_call_price.(F * exp(-r*T), 0, r, strikes_calls, impl_vol_calls, T)
+#
+# df_sub = df[(df.date .== option.date) .&
+#                  (df.exdate .== option.exdate) .&
+#                  (df.secid .== option.secid), :]
+# df_sub_puts = sort(df_sub[df_sub.cp_flag .== "P", :], :strike_price)
+# df_sub_calls = sort(df_sub[df_sub.cp_flag .== "C", :], :strike_price)
+#
+# actual_prices_puts = df_sub_puts[:mid_price]
+# actual_prices_calls = df_sub_calls[:mid_price]
 
 # 3. Calculating integral only "in-sample", i.e. the limits of integration are
 # from the first to the last strike
-calc_option_value_put = K -> calc_option_value(option, interp_param_list[1], K, "Put")
-calc_option_value_call = K -> calc_option_value(option, interp_param_list[1], K, "Call")
-
-IV1_raw = K -> calc_option_value_call(K)/K^2
-IV2_raw = K -> calc_option_value_put(K)/K^2
-
-spot = option.spot
-min_K = minimum(strikes)
-max_K = maximum(strikes)
-IV_limit = (2*exp(r*T)/T) * (hquadrature(IV1_raw, spot, max_K)[1] + hquadrature(IV2_raw, min_K, spot)[1]) - (2/T)*(exp(r*T)-1-r*T)
-VIX_like_IV_limit = sqrt(IV_limit) * 100
-
-IV1 = t -> IV1_raw(spot + t/(1-t))/(1-t)^2
-IV2 = t -> IV2_raw(spot * t) * spot
-IV = (exp(r*T)*2/T) * (hquadrature(IV1, 0, 1)[1] + hquadrature(IV2, 0, 1)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
-VIX_like_IV = sqrt(IV) * 100
-
-V, IV, D = calc_variation_and_jump_risk(option, interp_param_list[1])
+# calc_option_value_put = K -> calc_option_value(option, interp_param_list[1], K, "Put")
+# calc_option_value_call = K -> calc_option_value(option, interp_param_list[1], K, "Call")
+#
+# IV1_raw = K -> calc_option_value_call(K)/K^2
+# IV2_raw = K -> calc_option_value_put(K)/K^2
+#
+# spot = option.spot
+# min_K = minimum(strikes)
+# max_K = maximum(strikes)
+# IV_limit = (2*exp(r*T)/T) * (hquadrature(IV1_raw, spot, max_K)[1] + hquadrature(IV2_raw, min_K, spot)[1]) - (2/T)*(exp(r*T)-1-r*T)
+# VIX_like_IV_limit = sqrt(IV_limit) * 100
+#
+# IV1 = t -> IV1_raw(spot + t/(1-t))/(1-t)^2
+# IV2 = t -> IV2_raw(spot * t) * spot
+# IV = (exp(r*T)*2/T) * (hquadrature(IV1, 0, 1)[1] + hquadrature(IV2, 0, 1)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+# VIX_like_IV = sqrt(IV) * 100
+#
+# V, IV, D = calc_variation_and_jump_risk(option, interp_param_list[1])
 
 # 4. Getting options with maturity close to 30 days
 unique_dates = unique(df_unique[:date])
 option_dates_arr = map(x -> x.date, option_arr)
 
-
+# # list of the options that are closest to 30 days maturity for a given
+# # oservation date:
+option_arr_close_30 = Array{OptionData, 1}(undef, length(unique_dates))
 for i = 1:length(unique_dates)
     current_date = unique_dates[i]
     current_option_arr = option_arr[map(x -> x.date, option_arr) .== current_date]
 
     dist_to_30 = abs.(map(x -> x.T*365, current_option_arr) .- 30)
-    findmin(dist_to_30)
+    index_close_30 = findmin(dist_to_30)[2] # index of the option closest to 30 days in maturity
+    option_arr_close_30[i] = current_option_arr[index_close_30]
 end
 
+option_arr_exactly_30 = option_arr[map(x -> x.T*365, option_arr) .== 30]
 
-option_arr = Array{OptionData, 1}(undef, max_options)
+# For each of these options need to calculate VIX, limited IV (that should be very
+# close to VIX), IV, V, D
+variation_comp = DataFrame(date = [], exdate = [], fit_type = [],
+                      VIX = [], IV_limit = [], IV = [], V = [], D = [])
+fit_type_list = ["rho=0, grid", "rho=0, global", "VarRho, grid", "VarRho, global"]
+
+for i = 1:length(option_arr_close_30)
+    print("Option # ")
+    print(i)
+    print("/")
+    print(length(option_arr_close_30))
+    print("\n")
+
+    option = option_arr_close_30[i]
+
+    VIX_i = calc_VIX(option) # interpolation free measure
+    spot = option.spot
+    r = option.int_rate
+    T = option.T
+    strikes = option.strikes
+
+    # Fitting different SVIs
+    svi_params_1 = fit_svi_bdbg_smile_grid(option)
+    svi_params_2 = fit_svi_bdbg_smile_global(option)
+    svi_params_3 = fit_svi_var_rho_smile_grid(option)
+    svi_params_4 = fit_svi_var_rho_smile_global(option)
+    param_list = [svi_params_1, svi_params_2, svi_params_3, svi_params_4]
+
+    # calculatin statistics for each interpolation type
+    for j = 1:length(param_list)
+        calc_option_value_put = K -> calc_option_value(option, param_list[j], K, "Put")
+        calc_option_value_call = K -> calc_option_value(option, param_list[j], K, "Call")
+
+        IV1_raw = K -> calc_option_value_call(K)/K^2
+        IV2_raw = K -> calc_option_value_put(K)/K^2
+
+        min_K = minimum(strikes)
+        max_K = maximum(strikes)
+        IV_limit_i = (exp(r*T)*2/T) * (hquadrature(IV1_raw, spot, max_K)[1] + hquadrature(IV2_raw, min_K, spot)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+
+        V_i, IV_i, D_i = calc_variation_and_jump_risk(option, param_list[j])
+
+        to_append = DataFrame(date = [option.date], exdate = [option.exdate], fit_type = [fit_type_list[j]],
+            VIX = [VIX_i], IV_limit = [IV_limit_i], IV = [IV_i], V = [V_i], D = [D_i])
+
+        append!(variation_comp, to_append)
+    end
+end
+
+CSV.write("output/variation_comp_2008_30.csv",  variation_comp)
+
+############################################################
+# Plotting the results:
+# Loading actual VIX series:
+# actual_vix = CSV.read("data/actual_vix_2017.csv"; datarow = 2, delim = ",")
+actual_vix = CSV.read("data/actual_vix_2008.csv"; datarow = 2, delim = ",")
+dates_actual_vix = actual_vix[1][unique(indexin(variation_comp[1], actual_vix[1]))]
+values_actual_vix = actual_vix[6][unique(indexin(variation_comp[1], actual_vix[1]))]
+
+cla()
+clf()
+fig = figure("An example", figsize=(10,8));
+
+fit_type_list = ["rho=0, grid", "rho=0, global", "VarRho, grid", "VarRho, global"]
+# fit_type_list = ["rho=0, grid", "rho=0, global"]
+
+ax = fig[:add_subplot](1,1,1);
+df_sub = variation_comp[variation_comp.fit_type .== fit_type_list[1],:]
+ax[:plot](dates_actual_vix, values_actual_vix, marker = "o", alpha = 0.5, linewidth = 1, c = "m", label = "Actual VIX (Adj Close)")
+ax[:plot](df_sub[:date], df_sub[:VIX], alpha = 0.5, linewidth = 2.5, c = "k", label = "Calculated VIX")
+
+color_list = ["b", "g", "r", "c"]
+
+for i = 1:length(fit_type_list)
+    df_sub = variation_comp[variation_comp.fit_type .== fit_type_list[i],:]
+
+    ax[:plot](df_sub[:date], 100*sqrt.(df_sub[:IV_limit]), alpha = 0.5, c = color_list[i], label = fit_type_list[i])
+    ax[:plot](df_sub[:date], 100*sqrt.(df_sub[:IV]), alpha = 0.5, c = color_list[i], linestyle = "--")
+end
+legend()
+# filepath_to_save = string("images/time_series_of_variation_measures_30_only.pdf")
+filepath_to_save = string("images/TSofIV_all_2008.pdf")
+PyPlot.savefig(filepath_to_save, format="pdf", bbox_inches= "tight");
+
+############################################################
+# Plotting time series of D for different parameters of SVI:
+
+# fit_type_list = ["rho=0, grid", "rho=0, global", "VarRho, grid", "VarRho, global"]
+fit_type_list = ["rho=0, grid", "rho=0, global"]
+
+cla()
+clf()
+fig = figure(figsize=(10,8));
+ax = fig[:add_subplot](1,1,1);
+
+color_list = ["b", "g", "r", "c"]
+
+for i = 1:length(fit_type_list)
+    df_sub = variation_comp[variation_comp.fit_type .== fit_type_list[i],:]
+
+    ax[:plot](df_sub[:date], 100*df_sub[:D], alpha = 0.5, c = color_list[i], label = fit_type_list[i])
+end
+legend()
+
+# filepath_to_save = string("images/time_series_of_variation_measures_30_only.pdf")
+filepath_to_save = string("images/TSofD_zero_rho_2008.pdf")
+PyPlot.savefig(filepath_to_save, format="pdf", bbox_inches= "tight");
+
+####################################################################
+# Checking the sensitivity of IV estimates to integration region.
+####################################################################
+
+function calc_IV(option::OptionData, interp_params, low_limit, high_limit)
+    spot = option.spot
+    r = option.int_rate
+    T = option.T
+
+    calc_option_value_put = K -> calc_option_value(option, interp_params, K, "Put")
+    calc_option_value_call = K -> calc_option_value(option, interp_params, K, "Call")
+
+    if isequal(high_limit, Inf)
+        IV1_raw = K -> calc_option_value_call(K)/K^2
+
+        if low_limit > spot
+            IV1 = t -> IV1_raw(low_limit + t/(1-t))/(1-t)^2
+            IV = (exp(r*T)*2/T) * (hquadrature(IV1, 0, 1)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+        else
+            IV1 = t -> IV1_raw(spot + t/(1-t))/(1-t)^2
+
+            IV2_raw = K -> calc_option_value_put(K)/K^2
+            IV2 = t -> IV2_raw(spot * t) * spot
+
+            IV = (exp(r*T)*2/T) * (hquadrature(IV1, 0, 1)[1] + hquadrature(IV2, 0, 1)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+        end
+    else
+        IV1 = K -> calc_option_value_call(K)/K^2
+        IV2 = K -> calc_option_value_put(K)/K^2
+
+        if low_limit > spot
+            IV = (exp(r*T)*2/T) * (hquadrature(IV1, low_limit, high_limit)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+        elseif high_limit < spot
+            IV = (exp(r*T)*2/T) * (hquadrature(IV2, low_limit, high_limit)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+        else
+            IV = (exp(r*T)*2/T) * (hquadrature(IV1, spot, high_limit)[1] + hquadrature(IV2, low_limit, spot)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+        end
+    end
+
+    return IV
+end
+
+sensitivity_comp = DataFrame(date = [], exdate = [], fit_type = [],
+    spot = [], sigmaNTM = [], IV = [], IV_in_sample = [], IV_2_to_2 = [],
+    IV_5_to_2 = [], IV_5_to_5 = [])
+
+fit_type_list = ["rho=0, grid", "rho=0, global"] #, "VarRho, grid", "VarRho, global"]
+
+for i = 1:length(option_arr_close_30)
+# for i = 1:length(option_arr_exactly_30)
+    print("Option # ")
+    print(i)
+    print("/")
+    print(length(option_arr_close_30))
+    print("\n")
+
+    option = option_arr_close_30[i]
+    # option = option_arr_exactly_30[i]
+
+    # Calculating near-the-money volatility by averaging implied vol
+    # of near-the-money options
+    NTM_dist = 0.05
+    NTM_index = (option.strikes .<= option.spot*(1.0 + NTM_dist)) .&
+                (option.strikes .>= option.spot*(1.0 - NTM_dist))
+    sigma_NTM_i = mean(option.impl_vol[NTM_index])
+    sigma_adj = sigma_NTM_i * sqrt(1/12)
+
+    # Fitting different SVIs
+    svi_params_1 = fit_svi_bdbg_smile_grid(option)
+    svi_params_2 = fit_svi_bdbg_smile_global(option)
+    param_list = [svi_params_1, svi_params_2]
+
+    min_K = minimum(option.strikes)
+    max_K = maximum(option.strikes)
+    spot = option.spot
+
+    # calculatin statistics for each interpolation type
+    for j = 1:length(param_list)
+        IV_i = calc_IV(option, param_list[j], 0, Inf)
+        IV_in_sample_i = calc_IV(option, param_list[j], min_K, max_K)
+        IV_2_to_2_i = calc_IV(option, param_list[j], maximum([0, spot*(1 - 2 * sigma_adj)]), spot*(1 + 2 * sigma_adj))
+        IV_5_to_2_i = calc_IV(option, param_list[j], maximum([0, spot*(1 - 5 * sigma_adj)]), spot*(1 + 2 * sigma_adj))
+        IV_5_to_5_i = calc_IV(option, param_list[j], maximum([0, spot*(1 - 5 * sigma_adj)]), spot*(1 + 5 * sigma_adj))
+
+        to_append = DataFrame(date = [option.date], exdate = [option.exdate],
+            fit_type = [fit_type_list[j]],
+            spot = [spot], sigmaNTM = [sigma_NTM_i],
+            IV = [IV_i], IV_in_sample = [IV_in_sample_i], IV_2_to_2 = [IV_2_to_2_i],
+            IV_5_to_2 = [IV_5_to_2_i], IV_5_to_5 = [IV_5_to_5_i])
+
+        append!(sensitivity_comp, to_append)
+    end
+end
+
+CSV.write("output/sensitivity_comp_2008.csv",  sensitivity_comp)
+
+########################################################
+# Plotting the results of sensitivity comparison:
+cla()
+clf()
+fig = figure("An example", figsize=(10,8));
+
+ax1 = fig[:add_subplot](3,1,1);
+ax2 = fig[:add_subplot](3,1,2);
+ax3 = fig[:add_subplot](3,1,3);
+
+df_sub = sensitivity_comp[sensitivity_comp.fit_type .== fit_type_list[1],:]
+
+ax1[:plot](df_sub.date, df_sub.sigmaNTM.*sqrt(1/12), label = "Sigma NTM")
+ax1[:set_title]("(Near-the-Money sigma)*sqrt(1/12)")
+
+ax2[:plot](df_sub.date, df_sub.IV, alpha = 0.5, label = "IV")
+ax2[:plot](df_sub.date, df_sub.IV_in_sample, alpha = 0.5, label = "IV in sample")
+ax2[:plot](df_sub.date, df_sub.IV_2_to_2, alpha = 0.5, label = "IV for [-2sigma, 2sigma]")
+ax2[:plot](df_sub.date, df_sub.IV_5_to_2, alpha = 0.5, label = "IV for [-5sigma, 2sigma]")
+ax2[:plot](df_sub.date, df_sub.IV_5_to_5, alpha = 0.5, label = "IV for [-5sigma, 5sigma]")
+ax2[:set_title]("SVI with rho=0, grid")
+
+df_sub = sensitivity_comp[sensitivity_comp.fit_type .== fit_type_list[2],:]
+
+ax3[:plot](df_sub.date, df_sub.IV, alpha = 0.5, label = "IV")
+ax3[:plot](df_sub.date, df_sub.IV_in_sample, alpha = 0.5, label = "IV in sample")
+ax3[:plot](df_sub.date, df_sub.IV_2_to_2, alpha = 0.5, label = "IV for [-2sigma, 2sigma]")
+ax3[:plot](df_sub.date, df_sub.IV_5_to_2, alpha = 0.5, label = "IV for [-5sigma, 2sigma]")
+ax3[:plot](df_sub.date, df_sub.IV_5_to_5, alpha = 0.5, label = "IV for [-5sigma, 5sigma]")
+ax3[:set_title]("SVI with rho=0, global")
+
+subplots_adjust(wspace = 0.35, hspace = 0.35);
+
+legend()
+# filepath_to_save = string("images/time_series_of_variation_measures_30_only.pdf")
+filepath_to_save = string("images/sensitivity_comparison_2008.pdf")
+PyPlot.savefig(filepath_to_save, format="pdf", bbox_inches= "tight");

@@ -4,19 +4,19 @@
 import numpy as np
 from numpy.linalg import inv, pinv
 import pandas as pd
+import nlopt
 from pandas.tseries.offsets import *
 from matplotlib import pyplot as plt
 from datetime import datetime, timedelta
 from scipy.optimize import minimize, Bounds, LinearConstraint
 from math import log, exp, pi, sqrt
 import time
-import os
-os.chdir('/Users/rsigalov/Documents/PhD/disaster-risk-revision')
+#import os
+#os.chdir('/Users/rsigalov/Documents/PhD/disaster-risk-revision')
 
 from OptionSmile import *
 
 import multiprocessing
-from joblib import Parallel, delayed
 
 num_cores = multiprocessing.cpu_count()
 print(num_cores)
@@ -48,14 +48,54 @@ for i_row in range(100):
     
     option_list.append(i_option)
     
-
-start = time.time()
-
 def fit_svi_to_parallel(x):
     x.fit_svi_bdbg_smile()
+    
+def fit_svi_global_to_parallel(x):
+    x.fit_svi_bdbg_smile_global()
 
-squares = Parallel(n_jobs=4)(delayed(fit_svi_to_parallel)(x) for x in option_list[0:100])
-
+print("################################################")
+print("Testing Parallel Estimation")
+print("")
+print("1. 1 Processor, grid")
+start = time.time()
+pool = multiprocessing.Pool(processes = 1)
+pool.map(fit_svi_to_parallel, option_list)
+end = time.time()
+print(end-start)
+print("")
+print("1. 4 Processors, grid")
+start = time.time()
+pool = multiprocessing.Pool(processes = 4)
+pool.map(fit_svi_to_parallel, option_list)
+end = time.time()
+print(end-start)
+print("")
+print("1. 8 Processors, grid")
+start = time.time()
+pool = multiprocessing.Pool(processes = 8)
+pool.map(fit_svi_to_parallel, option_list)
+end = time.time()
+print(end-start)
+print("")
+print("1. 1 Processor, global")
+start = time.time()
+pool = multiprocessing.Pool(processes = 1)
+pool.map(fit_svi_global_to_parallel, option_list)
+end = time.time()
+print(end-start)
+print("")
+print("1. 4 Processors, global")
+start = time.time()
+pool = multiprocessing.Pool(processes = 4)
+pool.map(fit_svi_global_to_parallel, option_list)
+end = time.time()
+print(end-start)
+print("")
+print("1. 8 Processor, global")
+start = time.time()
+pool = multiprocessing.Pool(processes = 8)
+pool.map(fit_svi_global_to_parallel, option_list)
 end = time.time()
 print(end-start)
 

@@ -1,12 +1,18 @@
+print("\n Loading libraries \n")
+
 using DataFrames
 using CSV
 using Dates
+# using PyPlot
 using Distributed
 @everywhere using NLopt
-@everywhere include("funcs.jl")
+@everywhere include("funcs_old.jl")
 
-print("Started the actual program\n")
+print("\n Number of processors ")
+print(nprocs())
 print("\n")
+
+print("\nStarted the actual program\n")
 
 df = CSV.read("data/opt_data.csv"; datarow = 2, delim = ",")
 df_unique = unique(df[:, [:secid,:date,:exdate]])
@@ -30,7 +36,7 @@ for i_option = 1:max_options
     option_arr[i_option] = OptionData(secid, obs_date, exp_date, spot, strikes, impl_vol, T)
 end
 
-print("Created all options\n")
+print("\nCreated all options\n")
 
 # @everywhere function fit_svi_bdbg_grid_for_pmap(option::OptionData)
 #     res = fit_svi_bdbg_smile_grid(option)
@@ -62,8 +68,13 @@ print("Created all options\n")
 #
 # print("Done with VarRho-grid\n")
 
-@time tmp = pmap(fit_svi_zero_rho_global, option_arr[1:2]);
-@time svi_var_rho_global_params_arr = pmap(fit_svi_var_rho_global_for_pmap, option_arr);
+@everywhere function fit_svi_bdbg_smile_global_for_map(option::OptionData)
+    res = fit_svi_bdbg_smile_global(option)
+    return SVIParams(res[1], res[2], res[3], res[4], res[5], res[6], res[7])
+end
+
+@time tmp = pmap(fit_svi_bdbg_smile_global_for_map, option_arr[1:2]);
+@time svi_var_rho_global_params_arr = pmap(fit_svi_bdbg_smile_global_for_map, option_arr);
 
 print("Done with VarRho-global\n")
 print("Done with everything")

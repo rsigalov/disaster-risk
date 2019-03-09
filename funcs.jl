@@ -24,14 +24,24 @@ struct SVIParams
 end
 
 function interpolate_int_rate(date_obs, date_val, zcb)
+
     opt_days_maturity = Dates.value(date_val - date_obs)
 
-    zcb_sub = zcb[zcb.date .== date_obs, :]
+    # pick the last date before the obs_date. If there is such a date
+    # then it will be picked:
+    unique_dates = unique(zcb[:date])
+    unique_dates_before = unique_dates[unique_dates .<= date_obs]
+    date_obs = unique_dates_before[end]
+
+
+    zcb_sub = zcb[zcb[:date] .== date_obs, :]
     x = zcb_sub[:days]
     y = zcb_sub[:rate]
 
-    if opt_days_maturity < minimum(x)
-        int_rate = minimum(x)
+    if opt_days_maturity <= minimum(x)
+        int_rate = y[1]
+    elseif opt_days_maturity >= maximum(x)
+        int_rate = y[end]
     else
         x1 = x[x .<= opt_days_maturity][end]
         y1 = y[x .<= opt_days_maturity][end]
@@ -45,7 +55,7 @@ function interpolate_int_rate(date_obs, date_val, zcb)
     return int_rate/100
 end
 
-function fit_svi_bdbg_smile_grid(option::OptionData)
+function fit_svi_zero_rho_grid(option::OptionData)
     log_moneyness = log.(option.strikes ./ option.spot)
     impl_var = option.impl_vol .^ 2
     # T = Dates.value(option.exdate - option.date)
@@ -99,7 +109,7 @@ function fit_svi_bdbg_smile_grid(option::OptionData)
     return SVIParams(m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret)
 end
 
-function fit_svi_bdbg_smile_global(option::OptionData)
+function fit_svi_zero_rho_global(option::OptionData)
     log_moneyness = log.(option.strikes ./ option.spot)
     impl_var = option.impl_vol .^ 2
     # T = Dates.value(option.exdate - option.date)
@@ -114,6 +124,8 @@ function fit_svi_bdbg_smile_global(option::OptionData)
     lower_bounds!(opt1, [-1, 0.00001])
     upper_bounds!(opt1, [1, 10])
     ftol_abs!(opt1, 1e-12)
+    maxtime!(opt1, 1) # Some optimization can get stuck there. So, we want to
+                      # limit optimization time
 
     min_objective!(opt1, to_minimize)
     x0 = [-0.9, 2]
@@ -199,6 +211,7 @@ function fit_svi_var_rho_smile_grid(option::OptionData)
 end
 
 function fit_svi_var_rho_smile_global(option::OptionData)
+    print("Done with global")
     log_moneyness = log.(option.strikes ./ option.spot)
     impl_var = option.impl_vol .^ 2
     # T = Dates.value(option.exdate - option.date)
@@ -244,6 +257,18 @@ end
 
 function svi_smile(k, m, sigma, rho, a, b)
 	return a .+ b.*(rho.*(k.-m) .+ sqrt.((k .- m).^2 .+ sigma.^2))
+end
+
+# If the SVI function takes in minimum k and max k, then it clamps
+# the value at end points:
+function svi_smile(k, m, sigma, rho, a, b, min_k, max_k)
+    if k .< min_k
+        return a .+ b.*(rho.*(min_k.-m) .+ sqrt.((min_k .- m).^2 .+ sigma.^2))
+    elseif k .> max_k
+        return a .+ b.*(rho.*(max_k.-m) .+ sqrt.((max_k .- m).^2 .+ sigma.^2))
+    else
+	    return a .+ b.*(rho.*(k.-m) .+ sqrt.((k .- m).^2 .+ sigma.^2))
+    end
 end
 
 function  satisfies_constraints(sigma, beta, max_v)
@@ -522,7 +547,7 @@ end
 ############################################################
 
 function plot_vol_smile(option::OptionData, params::SVIParams,
-                         label, ax = Missing)
+                         label, ax = Missing, col_scatter = "b", col_line = "r")
     if isequal(ax, Missing)
         fig = figure("An example", figsize=(10,8));
         ax = fig[:add_subplot](1,1,1);
@@ -532,14 +557,39 @@ function plot_vol_smile(option::OptionData, params::SVIParams,
     impl_var = option.impl_vol.^2
 
     range_log_moneyness = log_moneyness[end] - log_moneyness[1]
-    plot_range = LinRange(log_moneyness[1] - range_log_moneyness*0.05,
-                          log_moneyness[end] + range_log_moneyness*0.05, 1000);
+    plot_range = LinRange(log_moneyness[1] - range_log_moneyness*0.20,
+                          log_moneyness[end] + range_log_moneyness*0.20, 1000);
 
-    ax[:scatter](log_moneyness, impl_var, alpha = 0.25, c = "b")
+    ax[:scatter](log_moneyness, impl_var, alpha = 0.25, c = col_scatter)
     ax[:plot](plot_range, svi_smile(plot_range, params.m,
                                     params.sigma, params.rho,
                                     params.a, params.b),
-              c = "r", linewidth = 1)
+              c = col_line, linewidth = 1)
+
+    ax[:set_title](label)
+    ax[:set_xlabel]("log(Strike/Spot)")
+    ax[:set_ylabel]("Implied Variance")
+
+    return ax
+end
+
+function plot_vol_smile(option::OptionData, params::Spline1D,
+                         label, ax = Missing, col_scatter = "b", col_line = "r")
+    if isequal(ax, Missing)
+        fig = figure("An example", figsize=(10,8));
+        ax = fig[:add_subplot](1,1,1);
+    end
+
+    log_moneyness = log.(option.strikes/option.spot)
+    impl_var = option.impl_vol.^2
+
+    range_log_moneyness = log_moneyness[end] - log_moneyness[1]
+    plot_range = LinRange(log_moneyness[1] - range_log_moneyness*0.50,
+                          log_moneyness[end] + range_log_moneyness*0.50, 1000);
+
+    ax[:scatter](log_moneyness, impl_var, alpha = 0.25, c = col_scatter)
+    ax[:plot](plot_range, evaluate(params, plot_range),
+              c = col_line, linewidth = 1)
 
     ax[:set_title](label)
     ax[:set_xlabel]("log(Strike/Spot)")
@@ -590,6 +640,12 @@ end
 # Functions to calculate Call/Put option prices for given strike
 ################################################################
 
+################################################
+# Calculating Black-Scholes Price
+# function to calculate BS price for an asset with
+# continuously compounded dividend at rate q. Can be
+# accomodated to calculate price of option for an
+# asset with discrete known ndividends
 function BS_call_price(S0, q, r, K, sigma, T)
     d1 = (log(S0/K) + (r - q + sigma^2/2)*T)/(sigma*sqrt(T))
     d2 = d1 - sigma*sqrt(T)
@@ -600,7 +656,6 @@ function BS_call_price(S0, q, r, K, sigma, T)
     return p1 - p2
 end
 
-# Calculating BS put price:
 function BS_put_price(S0, q, r, K, sigma, T)
     d1 = (log(S0/K) + (r - q + sigma^2/2)*T)/(sigma*sqrt(T))
     d2 = d1 - sigma*sqrt(T)
@@ -666,7 +721,6 @@ function calc_option_value(option::OptionData, interp_params, strike, option_typ
     return option_price
 end
 
-
 # Function to calculate Risk-Neutral CDF and PDF:
 function calc_RN_CDF_PDF(option::OptionData, interp_params, strike)
     spot = option.spot
@@ -688,4 +742,463 @@ function calc_RN_CDF_PDF(option::OptionData, interp_params, strike)
     pdf_value = exp(r * T) * der_2_put(strike)
 
     return cdf_value, pdf_value
+end
+
+function calc_VIX(option::OptionData)
+    r = option.int_rate
+    F = option.forward
+    T = option.T
+
+    # Getting stikes that lie below (for puts) and above (fpr calls) the spot
+    strikes_puts = option.strikes[option.strikes .<= option.spot]
+    strikes_calls = option.strikes[option.strikes .> option.spot]
+
+    # The same with implied volatilities
+    impl_vol_puts = option.impl_vol[option.strikes .<= option.spot]
+    impl_vol_calls = option.impl_vol[option.strikes .> option.spot]
+
+    # Calculating prices for each strike and implied volatility
+    calc_prices_puts = BS_put_price.(F * exp(-r*T), 0, r, strikes_puts, impl_vol_puts, T)
+    calc_prices_calls = BS_call_price.(F * exp(-r*T), 0, r, strikes_calls, impl_vol_calls, T)
+
+    strikes = option.strikes
+    opt_prices = [calc_prices_puts; calc_prices_calls]
+    n = length(opt_prices)
+    deltaK = zeros(n)
+    deltaK[1] = strikes[2]-strikes[1]
+    deltaK[n] = strikes[n]-strikes[n-1]
+    deltaK[2:(n-1)] = (strikes[3:n] - strikes[1:(n-2)])./2
+
+    sigma2 = (2/T)*exp(r*T)*sum(opt_prices .* deltaK./strikes.^2) - (1/T)*(F/option.spot-1)^2
+    VIX = sqrt(sigma2) * 100
+    return VIX
+end
+
+function calc_V_IV_D(option::OptionData, interp_params, low_limit, high_limit)
+    spot = option.spot
+    r = option.int_rate
+    T = option.T
+
+    # 1. First define call and put option prices as functions of the strike:
+    calc_option_value_put = K -> calc_option_value(option, interp_params, K, "Put")
+    calc_option_value_call = K -> calc_option_value(option, interp_params, K, "Call")
+
+    # 2. Next define raw integrand functions. In the case that the upper limit of
+    # integration is infinite I will need to modify with change of variables
+    # that will allow me calculate an integral with inifinte limit
+
+    # These integrals contain call(strike) function
+    V1_raw = K -> 2 * (1 - log(K/spot)) * calc_option_value_call(K)/K^2
+    W1_raw = K -> (6 * log(K/spot) - 3 * (log(K/spot))^2) * calc_option_value_call(K)/K^2
+    X1_raw = K -> (12 * log(K/spot)^2 - 4 * log(K/spot)^3) * calc_option_value_call(K)/K^2
+
+    # These integrals contain put(strike) function
+    V2_raw = K -> 2 * (1 + log(spot/K)) * calc_option_value_put(K)/K^2
+    W2_raw = K -> (6 * log(spot/K) + 3 * log(spot/K)^2) * calc_option_value_put(K)/K^2
+    X2_raw = K -> (12 * log(spot/K)^2 + 4 * log(spot/K)^3) * calc_option_value_put(K)/K^2
+
+    if isequal(high_limit, Inf)
+        IV1_raw = K -> calc_option_value_call(K)/K^2
+
+        if low_limit > spot
+            # Dealing with IV. There is only one integral:
+            IV1 = t -> IV1_raw(low_limit + t/(1-t))/(1-t)^2
+
+            # Integrating to get integrated variation hcubature
+            integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, 0, 1)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+
+            # Modifying integrands because we have an infinite upper limit of
+            # integration.
+            V1 = t -> V1_raw(low_limit + t/(1-t))/(1-t)^2
+            W1 = t -> W1_raw(low_limit + t/(1-t))/(1-t)^2
+            X1 = t -> X1_raw(low_limit + t/(1-t))/(1-t)^2
+
+            # Actually calculating these integrals
+            V = hquadrature(V1, 0, 1)[1]
+            W = hquadrature(W1, 0, 1)[1]
+            X = hquadrature(X1, 0, 1)[1]
+
+            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+
+            # Computing variation:
+            variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
+        else
+            # In this case we are dealing with both integrals with calls and puts
+            # First, dealing with integrated variation:
+            IV1 = t -> IV1_raw(spot + t/(1-t))/(1-t)^2
+
+            IV2_raw = K -> calc_option_value_put(K)/K^2
+            IV2 = t -> IV2_raw(spot * t) * spot
+
+            integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, 0, 1)[1] + hquadrature(IV2, 0, 1)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+
+            # Modifying integrands to account for infinite upper integration limit
+            V1 = t -> V1_raw(spot + t/(1-t))/(1-t)^2
+            W1 = t -> W1_raw(spot + t/(1-t))/(1-t)^2
+            X1 = t -> X1_raw(spot + t/(1-t))/(1-t)^2
+
+            V = hquadrature(V1, 0, 1)[1] + hquadrature(V2_raw, low_limit, spot)[1]
+            W = hquadrature(W1, 0, 1)[1] + hquadrature(W2_raw, low_limit, spot)[1]
+            X = hquadrature(X1, 0, 1)[1] + hquadrature(X2_raw, low_limit, spot)[1]
+
+            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+
+            variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
+
+        end
+    else
+        IV1 = K -> calc_option_value_call(K)/K^2
+        IV2 = K -> calc_option_value_put(K)/K^2
+
+        if low_limit > spot
+            integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, low_limit, high_limit)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+
+            V = hquadrature(V1_raw, low_limit, high_limit)[1]
+            W = hquadrature(W1_raw, low_limit, high_limit)[1]
+            X = hquadrature(X1_raw, low_limit, high_limit)[1]
+
+            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+
+            variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
+
+        elseif high_limit <= spot
+            integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV2, low_limit, high_limit)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+
+            V = hquadrature(V2_raw, low_limit, high_limit)[1]
+            W = hquadrature(W2_raw, low_limit, high_limit)[1]
+            X = hquadrature(X2_raw, low_limit, high_limit)[1]
+
+            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+
+            variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
+        else
+            integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, spot, high_limit)[1] + hquadrature(IV2, low_limit, spot)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+
+            V = hquadrature(V1_raw, spot, high_limit)[1] + hquadrature(V2_raw, low_limit, spot)[1]
+            W = hquadrature(W1_raw, spot, high_limit)[1] + hquadrature(W2_raw, low_limit, spot)[1]
+            X = hquadrature(X1_raw, spot, high_limit)[1] + hquadrature(X2_raw, low_limit, spot)[1]
+
+            mu = exp(r*T) - 1 - exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+
+            variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
+        end
+    end
+
+    return variation, integrated_variation
+end
+
+function estimate_parameters(option, interp_params)
+    T = option.T
+    spot = option.spot
+
+    # 0. Calculate sigma_NTM and scale it appropriately:
+    NTM_dist = 0.05
+    NTM_index = (option.strikes .<= option.spot*(1.0 + NTM_dist)) .&
+                (option.strikes .>= option.spot*(1.0 - NTM_dist))
+
+    if sum(NTM_index) == 0
+        if minimum(option.strikes) > option.spot
+            sigma_NTM = option.impl_vol[1]
+        elseif maximum(option.strikes) < option.spot
+            sigma_NTM = option.impl_vol[end]
+        else
+            sigma_NTM = option.impl_vol[option.strikes .<= option.spot][end]
+        end
+    else
+        sigma_NTM = mean(option.impl_vol[NTM_index]) * sqrt(option.T)
+    end
+
+
+
+    # 1. Estimate V, IV using all data:
+    V, IV = calc_V_IV_D(option, interp_params, 0, Inf)
+    V_in_sample, IV_in_sample = calc_V_IV_D(option, interp_params, minimum(option.strikes), maximum(option.strikes))
+    V_5_5, IV_5_5 = calc_V_IV_D(option, interp_params, max(0,spot*(1-5*sigma_NTM)), spot*(1+5*sigma_NTM))
+
+    # 2. Estimate V, IV only using OTM puts. This means that we can integrate
+    # from 0 to spot, from lowest strike to spot and from 1-5*sigma to spot
+    V_otm, IV_otm = calc_V_IV_D(option, interp_params, 0, spot)
+    V_otm_in_sample, IV_otm_in_sample = calc_V_IV_D(option, interp_params, minimum(option.strikes), spot)
+    V_otm_5_5, IV_otm_5_5 = calc_V_IV_D(option, interp_params, max(0,spot*(1-5*sigma_NTM)), spot)
+
+    # 3. Estimate V and IV using strikes for puts that are at least 1 sigma
+    # away from spot. It means that we can integrate from 0 to spot*(1-sigma),
+    # from lowest strike to spot*(1-sigma) and from spot*(1-5sigma) to spot*(1-sigma)
+    if sigma_NTM < 1
+        V_otm1, IV_otm1 = calc_V_IV_D(option, interp_params, 0, spot * (1 - sigma_NTM))
+        V_otm1_in_sample, IV_otm1_in_sample = calc_V_IV_D(option, interp_params, minimum(option.strikes), spot * (1 - sigma_NTM))
+        V_otm1_5_5, IV_otm1_5_5 = calc_V_IV_D(option, interp_params, max(0,spot*(1-5*sigma_NTM)), spot * (1 - sigma_NTM))
+    else
+        V_otm1, IV_otm1, V_otm1_in_sample, IV_otm1_in_sample, V_otm1_5_5, IV_otm1_5_5 = NaN, NaN, NaN, NaN, NaN, NaN
+    end
+
+    # 4. RN probability of two sigma drop:
+    rn_prob_2sigma = calc_RN_CDF_PDF(option, interp_params, max(0, spot*(1-2*sigma_NTM)))[1]
+
+    # 5. Need 40% annualized decline. Not sure what annualized means
+    rn_prob_40ann = calc_RN_CDF_PDF(option, interp_params, max(0, spot*0.6^(1/T)))[1]
+
+    return V, IV, V_in_sample, IV_in_sample, V_5_5, IV_5_5, V_otm, IV_otm, V_otm_in_sample, IV_otm_in_sample,
+        V_otm_5_5, IV_otm_5_5, V_otm1, IV_otm1, V_otm1_in_sample, IV_otm1_in_sample, V_otm1_5_5, IV_otm1_5_5,
+        rn_prob_2sigma, rn_prob_40ann
+end
+
+
+########################################################################
+# Functions that take not the whole OptionData struct but just parts
+# of it. It seems to work considerably faster. Probably because there
+# is no need to carry around all strikes and implied volatility arrays
+########################################################################
+
+# Function to calculate interpolated implied volatility for a
+# given OptionData and SVI interpolated volatility smile
+function calc_interp_impl_vol(spot, interp_params::SVIParams, strike, min_K, max_K)
+    log_moneyness = log.(strike/spot) # SVI was interpolated as a function of
+                                      # the log of the ratio of strike to
+                                      # current spot price of the underlying asset
+    min_log_mon = log(min_K/spot)
+    max_log_mon = log(max_K/spot)
+
+    m = interp_params.m
+    sigma = interp_params.sigma
+    rho = interp_params.rho
+    a = interp_params.a
+    b = interp_params.b
+
+    interp_impl_var = svi_smile(log_moneyness, m, sigma, rho, a, b)
+
+    # SVI is formulated with implie variance (sigma^2) as its value. Therefore,
+    # we need to take a square root before squaring it
+    return interp_impl_var .^ 0.5
+end
+
+# Function to calculate interpolated implied volatility for a
+# given OptionData and Cubic Spline interpolated volatility smile
+# it has the same name, but different argument type. Julia takes care of it
+function calc_interp_impl_vol(spot, interp_params::CubicSplineParams, strike)
+    log_moneyness = log.(strike/option.spot)
+
+    return calculateSplineVol(log_moneyness, interp_params)
+end
+
+# Function to calculate Call (Put) option value given OptionData and
+# an struct with interpolation parameters:
+function calc_option_value(spot, r, F, T, interp_params, strike, option_type)
+    # Getting implied vol for this particular strike given an interpolated
+    # volatility smile
+    impl_vol = calc_interp_impl_vol(spot, interp_params, strike)
+
+    if option_type == "Call"
+        option_price = BS_call_price.(F * exp(-r*T), 0, r,
+                                      strike, impl_vol, T)
+    elseif option_type == "Put"
+        option_price = BS_put_price.(F * exp(-r*T), 0, r,
+                                     strike, impl_vol, T)
+    else
+        error("option_type should be Call or Put")
+    end
+
+    return option_price
+end
+
+# Function to calculate Risk-Neutral CDF and PDF:
+function calc_RN_CDF_PDF(spot, r, F, T, interp_params, strike)
+
+    # function to calculate call option price for a specific
+    # option and interpolation parameters:
+    calc_specific_option_put_value = K -> calc_option_value(spot, r, F, T, interp_params, K, "Put")
+
+    # First derivative of put(strike) function
+    der_1_put = K -> ForwardDiff.derivative(calc_specific_option_put_value, K)
+
+    # Second derivative of call(strike) function
+    der_2_put = K -> ForwardDiff.derivative(der_1_put, K)
+
+    # Calculaing CDF and PDF:
+    cdf_value = exp(r * T) * der_1_put(strike)
+    pdf_value = exp(r * T) * der_2_put(strike)
+
+    return cdf_value, pdf_value
+end
+
+function calc_VIX(option::OptionData)
+    r = option.int_rate
+    F = option.forward
+    T = option.T
+
+    # Getting stikes that lie below (for puts) and above (fpr calls) the spot
+    strikes_puts = option.strikes[option.strikes .<= option.spot]
+    strikes_calls = option.strikes[option.strikes .> option.spot]
+
+    # The same with implied volatilities
+    impl_vol_puts = option.impl_vol[option.strikes .<= option.spot]
+    impl_vol_calls = option.impl_vol[option.strikes .> option.spot]
+
+    # Calculating prices for each strike and implied volatility
+    calc_prices_puts = BS_put_price.(F * exp(-r*T), 0, r, strikes_puts, impl_vol_puts, T)
+    calc_prices_calls = BS_call_price.(F * exp(-r*T), 0, r, strikes_calls, impl_vol_calls, T)
+
+    strikes = option.strikes
+    opt_prices = [calc_prices_puts; calc_prices_calls]
+    n = length(opt_prices)
+    deltaK = zeros(n)
+    deltaK[1] = strikes[2]-strikes[1]
+    deltaK[n] = strikes[n]-strikes[n-1]
+    deltaK[2:(n-1)] = (strikes[3:n] - strikes[1:(n-2)])./2
+
+    sigma2 = (2/T)*exp(r*T)*sum(opt_prices .* deltaK./strikes.^2) - (1/T)*(F/option.spot-1)^2
+    VIX = sqrt(sigma2) * 100
+    return VIX
+end
+
+
+function calc_V_IV_D(spot, r, F, T,  interp_params, low_limit, high_limit)
+
+    # 1. First define call and put option prices as functions of the strike:
+    calc_option_value_put = K -> calc_option_value(spot, r, F, T, interp_params, K, "Put")
+    calc_option_value_call = K -> calc_option_value(spot, r, F, T, interp_params, K, "Call")
+
+    # 2. Next define raw integrand functions. In the case that the upper limit of
+    # integration is infinite I will need to modify with change of variables
+    # that will allow me calculate an integral with inifinte limit
+
+    # These integrals contain call(strike) function
+    V1_raw = K -> 2 * (1 - log(K/spot)) * calc_option_value_call(K)/K^2
+    W1_raw = K -> (6 * log(K/spot) - 3 * (log(K/spot))^2) * calc_option_value_call(K)/K^2
+    X1_raw = K -> (12 * log(K/spot)^2 - 4 * log(K/spot)^3) * calc_option_value_call(K)/K^2
+
+    # These integrals contain put(strike) function
+    V2_raw = K -> 2 * (1 + log(spot/K)) * calc_option_value_put(K)/K^2
+    W2_raw = K -> (6 * log(spot/K) + 3 * log(spot/K)^2) * calc_option_value_put(K)/K^2
+    X2_raw = K -> (12 * log(spot/K)^2 + 4 * log(spot/K)^3) * calc_option_value_put(K)/K^2
+
+    if isequal(high_limit, Inf)
+        IV1_raw = K -> calc_option_value_call(K)/K^2
+
+        if low_limit > spot
+            # Dealing with IV. There is only one integral:
+            IV1 = t -> IV1_raw(low_limit + t/(1-t))/(1-t)^2
+
+            # Integrating to get integrated variation hcubature
+            integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, 0, 1, maxevals = 100000)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+
+            # Modifying integrands because we have an infinite upper limit of
+            # integration.
+            V1 = t -> V1_raw(low_limit + t/(1-t))/(1-t)^2
+            W1 = t -> W1_raw(low_limit + t/(1-t))/(1-t)^2
+            X1 = t -> X1_raw(low_limit + t/(1-t))/(1-t)^2
+
+            # Actually calculating these integrals
+            V = hquadrature(V1, 0, 1, maxevals = 100000)[1]
+            W = hquadrature(W1, 0, 1, maxevals = 100000)[1]
+            X = hquadrature(X1, 0, 1, maxevals = 100000)[1]
+
+            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+
+            # Computing variation:
+            variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
+        else
+            # In this case we are dealing with both integrals with calls and puts
+            # First, dealing with integrated variation:
+            IV1 = t -> IV1_raw(spot + t/(1-t))/(1-t)^2
+
+            IV2_raw = K -> calc_option_value_put(K)/K^2
+            IV2 = t -> IV2_raw(spot * t) * spot
+
+            integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, 0, 1, maxevals = 100000)[1] + hquadrature(IV2, 0, 1, maxevals = 100000)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+
+            # Modifying integrands to account for infinite upper integration limit
+            V1 = t -> V1_raw(spot + t/(1-t))/(1-t)^2
+            W1 = t -> W1_raw(spot + t/(1-t))/(1-t)^2
+            X1 = t -> X1_raw(spot + t/(1-t))/(1-t)^2
+
+            V = hquadrature(V1, 0, 1, maxevals = 100000)[1] + hquadrature(V2_raw, low_limit, spot, maxevals = 100000)[1]
+            W = hquadrature(W1, 0, 1, maxevals = 100000)[1] + hquadrature(W2_raw, low_limit, spot, maxevals = 100000)[1]
+            X = hquadrature(X1, 0, 1, maxevals = 100000)[1] + hquadrature(X2_raw, low_limit, spot, maxevals = 100000)[1]
+
+            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+
+            variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
+
+        end
+    else
+        IV1 = K -> calc_option_value_call(K)/K^2
+        IV2 = K -> calc_option_value_put(K)/K^2
+
+        if low_limit > spot
+            integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, low_limit, high_limit, maxevals = 100000)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+
+            V = hquadrature(V1_raw, low_limit, high_limit, maxevals = 100000)[1]
+            W = hquadrature(W1_raw, low_limit, high_limit, maxevals = 100000)[1]
+            X = hquadrature(X1_raw, low_limit, high_limit, maxevals = 100000)[1]
+
+            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+
+            variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
+
+        elseif high_limit <= spot
+            integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV2, low_limit, high_limit, maxevals = 100000)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+
+            V = hquadrature(V2_raw, low_limit, high_limit, maxevals = 100000)[1]
+            W = hquadrature(W2_raw, low_limit, high_limit, maxevals = 100000)[1]
+            X = hquadrature(X2_raw, low_limit, high_limit, maxevals = 100000)[1]
+
+            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+
+            variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
+        else
+            integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, spot, high_limit, maxevals = 100000)[1] + hquadrature(IV2, low_limit, spot, maxevals = 100000)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+
+            V = hquadrature(V1_raw, spot, high_limit, maxevals = 100000)[1] + hquadrature(V2_raw, low_limit, spot, maxevals = 100000)[1]
+            W = hquadrature(W1_raw, spot, high_limit, maxevals = 100000)[1] + hquadrature(W2_raw, low_limit, spot, maxevals = 100000)[1]
+            X = hquadrature(X1_raw, spot, high_limit, maxevals = 100000)[1] + hquadrature(X2_raw, low_limit, spot, maxevals = 100000)[1]
+
+            mu = exp(r*T) - 1 - exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+
+            variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
+        end
+    end
+
+    return variation, integrated_variation
+end
+
+function estimate_parameters(spot, r, F, T, sigma_NTM, min_K, max_K, interp_params)
+
+    # 1. Estimate V, IV using all data:
+    V, IV = calc_V_IV_D(spot, r, F, T, interp_params, 0, Inf)
+    V_in_sample, IV_in_sample = calc_V_IV_D(spot, r, F, T,  interp_params, min_K, max_K)
+    V_5_5, IV_5_5 = calc_V_IV_D(spot, r, F, T,  interp_params, max(0,spot*(1-5*sigma_NTM)), spot*(1+5*sigma_NTM))
+
+    # 2. Estimate V, IV only using OTM puts. This means that we can integrate
+    # from 0 to spot, from lowest strike to spot and from 1-5*sigma to spot
+    # V_otm, IV_otm = calc_V_IV_D(spot, r, F, T,  interp_params, 0, spot)
+    V_otm_in_sample, IV_otm_in_sample = calc_V_IV_D(spot, r, F, T,  interp_params, min_K, spot)
+    V_otm_5_5, IV_otm_5_5 = calc_V_IV_D(spot, r, F, T,  interp_params, max(0,spot*(1-5*sigma_NTM)), spot)
+
+    # 3. Estimate V and IV using strikes for puts that are at least 1 sigma
+    # away from spot. It means that we can integrate from 0 to spot*(1-sigma),
+    # from lowest strike to spot*(1-sigma) and from spot*(1-5sigma) to spot*(1-sigma)
+    if sigma_NTM < 1
+        # V_otm1, IV_otm1 = calc_V_IV_D(spot, r, F, T,  interp_params, 0, spot * (1 - sigma_NTM))
+        V_otm1_in_sample, IV_otm1_in_sample = calc_V_IV_D(spot, r, F, T,  interp_params, min_K, spot * (1 - sigma_NTM))
+        # V_otm1_5_5, IV_otm1_5_5 = calc_V_IV_D(spot, r, F, T,  interp_params, max(0,spot*(1-5*sigma_NTM)), spot * (1 - sigma_NTM))
+    else
+        # V_otm1, IV_otm1, V_otm1_in_sample, IV_otm1_in_sample, V_otm1_5_5, IV_otm1_5_5 = NaN, NaN, NaN, NaN, NaN, NaN
+        V_otm1_in_sample, IV_otm1_in_sample = NaN, NaN
+    end
+
+    # 4. RN probability of two sigma drop:
+    rn_prob_2sigma = calc_RN_CDF_PDF(spot, r, F, T,  interp_params, max(0, spot*(1-2*sigma_NTM)))[1]
+
+    # 5. Need 40% annualized decline. Not sure what annualized means
+    rn_prob_40ann = calc_RN_CDF_PDF(spot, r, F, T,  interp_params, max(0, spot*0.6^T))[1]
+
+    return V, IV, V_in_sample, IV_in_sample, V_5_5, IV_5_5, V_otm_in_sample, IV_otm_in_sample,
+        V_otm_5_5, IV_otm_5_5, V_otm1_in_sample, IV_otm1_in_sample,
+        rn_prob_2sigma, rn_prob_40ann
+
+    # return V, IV, V_in_sample, IV_in_sample, V_5_5, IV_5_5, V_otm, IV_otm, V_otm_in_sample, IV_otm_in_sample,
+    #     V_otm_5_5, IV_otm_5_5, V_otm1, IV_otm1, V_otm1_in_sample, IV_otm1_in_sample, V_otm1_5_5, IV_otm1_5_5,
+    #     rn_prob_2sigma, rn_prob_40ann
+
 end

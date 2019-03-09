@@ -1,0 +1,57 @@
+"""
+Disaster risk analysis
+"""
+import matplotlib.pyplot as plt
+
+for i in range(1,11,1):
+    if i == 1:        
+        df = pd.read_csv("output/var_ests_equity_" + str(i) + ".csv")
+    else:
+        df = df.append(pd.read_csv("output/var_ests_equity_" + str(i) + ".csv"))
+    
+# Calculating D as V - IV and interpolating it to get 30 days measure of D:
+df["D"] = np.maximum(df["V"] - df["IV"], 0)
+df["D_in_sample"] = np.maximum(df["V_in_sample"] - df["IV_in_sample"],0)
+
+df_short = df[["secid", "date", "T", "D", "D_in_sample"]].dropna()
+
+T_days = np.arange(30,390,30)/365
+
+T_30_days = 30/365
+T_60_days = 60/365
+T_90_days = 90/365
+T_120_days = 120/365
+T_150_days = 150/365
+
+
+D_interp = pd.DataFrame(columns = ["secid", "date", "T", "inner", "D", "D_ins"])
+
+for name, group in df_short.groupby(["secid", "date"]):
+    inner_list = []
+    for t in T_days:
+        if np.count_nonzero(group["T"] <= t) > 0:
+            inner_list.append(1)
+        else:
+            inner_list.append(0)
+            
+    secid_list = [name[0] for i in range(len(T_days))]
+    date_list = [name[1] for i in range(len(T_days))]
+
+    D_list = np.interp(T_days, group["T"], group["D"])
+    D_in_sample_list = np.interp(T_days, group["T"], group["D_in_sample"])
+    
+D_30 = pd.DataFrame({"secid": secid_list, "date":date_list, "D": D_list, "D_ins": D_in_sample_list})
+
+
+
+
+
+
+
+
+df_sub = D_30[D_30["secid"] == 100958]
+df_sub["date"] = pd.to_datetime(df_sub["date"], format = "%Y-%m-%d")
+plt.plot(df_sub["D_ins"])
+plt.plot(df_sub["D"])
+
+

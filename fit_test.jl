@@ -6,20 +6,15 @@ using HCubature # Package to numerically integrate
 using ForwardDiff # Package to numerically differentiate
 using Dierckx # Package for interpolation
 include("funcs.jl")
-
+# cd("/Users/rsigalov/Documents/PhD/disaster-risk-revision/")
 using CSV
 using Dates
-
 
 using Plots
 using PyPlot
 
-
-
-
-
 # Loading data on options:
-df = CSV.read("aapl_opt_example_data.csv"; datarow = 2, delim = ",")
+df = CSV.read("aapl_data_2017.csv"; datarow = 2, delim = ",")
 df_size = size(df)[1]
 print(string("\n--- Total size of dataframe is ", df_size, " rows ---\n"))
 
@@ -32,7 +27,7 @@ df_unique = df_unique_N[df_unique_N[:number] .>= 5, :][:, [:secid,:date,:exdate]
 num_options = size(df_unique)[1]
 
 # Loading data on dividend distribution:
-dist_hist = CSV.read("aapl_dist_example_data.csv"; datarow = 2, delim = ",")
+dist_hist = CSV.read("aapl_dist_data.csv"; datarow = 2, delim = ",")
 
 # Loading data on interest rate to interpolate cont-compounded rate:
 zcb = CSV.read("data/zcb_data.csv"; datarow = 2, delim = ",")
@@ -116,16 +111,16 @@ num_options = length(option_arr) # Updating number of smiles to count only those
 svi_arr = map(fit_svi_zero_rho_global, option_arr)
 
 # Plotting the fit:
-for i_option = 1:num_options
-    clf()
-    fig = figure("An example", figsize=(6,4));
-    ax = fig[:add_subplot](1,1,1);
-    plot_vol_smile(option_arr[i_option], svi_arr[i_option], "", ax);
-    title_text = string(option_arr[i_option].secid,", from ", option_arr[i_option].date, " to ", option_arr[i_option].exdate);
-    suptitle(title_text);
-    filepath_to_save = string("images/ind_option_test/NKE_example_fit_", i_option, ".pdf")
-    PyPlot.savefig(filepath_to_save, format="pdf", bbox_inches= "tight");
-end
+# for i_option = 1:num_options
+#     clf()
+#     fig = figure("An example", figsize=(6,4));
+#     ax = fig[:add_subplot](1,1,1);
+#     plot_vol_smile(option_arr[i_option], svi_arr[i_option], "", ax);
+#     title_text = string(option_arr[i_option].secid,", from ", option_arr[i_option].date, " to ", option_arr[i_option].exdate);
+#     suptitle(title_text);
+#     filepath_to_save = string("images/ind_option_test/NKE_example_fit_", i_option, ".pdf")
+#     PyPlot.savefig(filepath_to_save, format="pdf", bbox_inches= "tight");
+# end
 
 # Estimating parameters:
 function calc_NTM_sigma(option::OptionData)
@@ -157,6 +152,15 @@ ests = map(estimate_parameters, spot_arr, r_arr,
            F_arr, T_arr, sigma_NTM_arr,
            min_K_arr, max_K_arr, svi_arr)
 
+# Saving data:
+
+
+
+
+
+
+
+
 
 #########################################################
 # Testing which part of the integral actually diverges:
@@ -165,6 +169,8 @@ option = option_arr[3]
 interp_params = svi_arr[3]
 
 spot = option.spot
+min_K = minimum(option.strikes)
+max_K = maximum(option.strikes)
 T = option.T
 r = option.int_rate
 F = option.forward
@@ -172,10 +178,12 @@ F = option.forward
 high_limit = Inf
 low_limit = 0
 
+estimate_parameters(spot, r, F, T, calc_NTM_sigma(option), min_K, max_K, interp_params)
+
 # In this case we are dealing with both integrals with calls and puts
 # First, dealing with integrated variation:
-calc_option_value_put = K -> calc_option_value(spot, r, F, T, interp_params, K, "Put")
-calc_option_value_call = K -> calc_option_value(spot, r, F, T, interp_params, K, "Call")
+calc_option_value_put = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K,  "Put")
+calc_option_value_call = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K, "Call")
 
 IV1_raw = K -> calc_option_value_call(K)/K^2
 IV1 = t -> IV1_raw(spot + t/(1-t))/(1-t)^2
@@ -221,56 +229,14 @@ Plots.plot(K_range, calc_option_value_put.(K_range))
 
 
 
-################################################
-# Interpolating with BSplines:
-################################################
 
-option = option_arr[3]
-log_moneyness = log.(option.strikes/option.spot)
+calc_RN_CDF = K -> calc_RN_CDF_PDF(spot, r, F, T, interp_params, K, min_K, max_K)[1]
+K_range = LinRange(0.01, 500, 1000)
 
-spl = Spline1D(log_moneyness, option.impl_vol; w = ones(length(log_moneyness)),
-               k=3, bc="nearest", s=0.25)
-
-clf()
-fig = figure("An example", figsize=(6,4));
-ax = fig[:add_subplot](1,1,1);
-plot_vol_smile(option, spl, "", ax);
-title_text = string("AAPL, from ", option_arr[i_option].date, " to ", option_arr[i_option].exdate);
-suptitle(title_text);
-filepath_to_save = string("aapl_example_fit_spline.pdf")
-PyPlot.savefig(filepath_to_save, format="pdf", bbox_inches= "tight");
+Plots.plot(K_range, calc_RN_CDF.(K_range))
 
 
+calc_RN_PDF = K -> calc_RN_CDF_PDF(spot, r, F, T, interp_params, K, min_K, max_K)[2]
+K_range = LinRange(0.01, 500, 1000)
 
-
-
-
-
-
-
-# Adding some artificial option to facilitate smooth transition:
-# option = option_arr[5]
-# strikes = option.strikes
-# impl_vol = option.impl_vol
-# log_moneyness = log.(option.strikes/option.spot)
-#
-# log_moneyness = [LinRange(-10,log_moneyness[1],1000); log_moneyness; LinRange(log_moneyness[end],10,1000)]
-# impl_vol = [ones(1000)*impl_vol[1]; impl_vol; ones(1000)*impl_vol[end]]
-#
-# spl = Spline1D(log_moneyness, impl_vol.^2;
-#                w = [0.5 * ones(1000);ones(length(strikes)); 0.5 * ones(1000)],
-#                k=3, bc="nearest", s = 0.01)
-#
-# clf()
-# fig = figure("An example", figsize=(6,4));
-# ax = fig[:add_subplot](1,1,1);
-# plot_vol_smile(option, spl, "", ax);
-# title_text = string("AAPL, from ", option_arr[i_option].date, " to ", option_arr[i_option].exdate);
-# suptitle(title_text);
-# filepath_to_save = string("aapl_example_fit_spline_extended.pdf")
-# PyPlot.savefig(filepath_to_save, format="pdf", bbox_inches= "tight");
-
-
-####################################################
-# Testing clamped SVI parametrization of vol smile
-####################################################
+Plots.plot(K_range, calc_RN_PDF.(K_range))

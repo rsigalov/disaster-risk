@@ -259,7 +259,18 @@ function svi_smile(k, m, sigma, rho, a, b)
 	return a .+ b.*(rho.*(k.-m) .+ sqrt.((k .- m).^2 .+ sigma.^2))
 end
 
+# Adding function to support clamping of svi-smile at endpoints
+# of minimum and maximum log-moneyness
 
+function svi_smile(k, m, sigma, rho, a, b, min_k, max_k)
+    if k .< min_k
+        return a .+ b.*(rho.*(min_k.-m) .+ sqrt.((min_k .- m).^2 .+ sigma.^2))
+    elseif k .> max_k
+        return a .+ b.*(rho.*(max_k.-m) .+ sqrt.((max_k .- m).^2 .+ sigma.^2))
+    else
+        return a .+ b.*(rho.*(k.-m) .+ sqrt.((k .- m).^2 .+ sigma.^2))
+    end
+end
 
 function  satisfies_constraints(sigma, beta, max_v)
     a = beta[1]
@@ -469,67 +480,6 @@ function obj_var_rho_fixed_m_sigma(m, sigma, rho, log_moneyness, impl_var, T)
     end
 
     return beta_opt, min_obj
-end
-
-################################################
-# Functions for fitting cubic spline
-################################################
-struct CubicSplineParams
-    x
-    a
-    b
-    c
-    d
-    left_vol
-    right_vol
-end
-
-# Proceeding to the actual fitting algorithm:
-function fitCubicSpline(option::OptionData)
-    x = log.(option.strikes ./ option.spot)
-    n = length(x)
-    h = x[2:n] .- x[1:(n-1)]
-    sigma = option.impl_vol
-    sigma_diff = sigma[2:n] .- sigma[1:(n-1)]
-
-    diagA = zeros(n)
-    diagA[1:(n-1)] = 2*h
-    diagA[2:n] = diagA[2:n] + 2*h
-
-    A = spdiagm(0 => diagA, 1 => h, -1 => h)
-
-    y = zeros(n)
-    y[1:(n-1)] = 6 * sigma_diff ./ h
-    y[2:n] = y[2:n] - 6 * sigma_diff ./ h
-    y = hcat(y...)'
-
-    z = inv(Matrix(A)) * y
-
-    # Calculating the actual coefficients:
-    d = (z[2:n] - z[1:(n-1)])./(6 * h)
-    c = z[1:(n-1)]./2
-    b = -z[1:(n-1)] .* h / 3 - z[2:n] .* h/6 + sigma_diff ./h
-    a = sigma[1:(n-1)]
-
-    spline = CubicSplineParams(x, a, b, c, d, sigma[1], sigma[n])
-end
-
-# Calculate fitted value for cubic spline:
-function calculateSplineVol(x, spline::CubicSplineParams)
-    if x <= minimum(spline.x)
-        return spline.left_vol
-    elseif x >= maximum(spline.x)
-        return spline.right_vol
-    else
-        ind_cur = findall(a -> x .< a, spline.x)[1] - 1
-        x_i = spline.x[ind_cur]
-        a_i = spline.a[ind_cur]
-        b_i = spline.b[ind_cur]
-        c_i = spline.c[ind_cur]
-        d_i = spline.d[ind_cur]
-
-        return a_i + b_i * (x - x_i) + c_i * (x - x_i)^2 + d_i * (x - x_i)^3
-    end
 end
 
 ############################################################
@@ -942,10 +892,13 @@ end
 
 # Function to calculate interpolated implied volatility for a
 # given OptionData and SVI interpolated volatility smile
-function calc_interp_impl_vol(spot, interp_params::SVIParams, strike)
+function calc_interp_impl_vol(spot, interp_params::SVIParams, strike, min_K, max_K)
     log_moneyness = log.(strike/spot) # SVI was interpolated as a function of
                                       # the log of the ratio of strike to
                                       # current spot price of the underlying asset
+
+    min_k = log(min_K/spot)
+    max_k = log(max_K/spot)
 
     m = interp_params.m
     sigma = interp_params.sigma
@@ -953,9 +906,9 @@ function calc_interp_impl_vol(spot, interp_params::SVIParams, strike)
     a = interp_params.a
     b = interp_params.b
 
-    interp_impl_var = svi_smile(log_moneyness, m, sigma, rho, a, b)
+    interp_impl_var = svi_smile(log_moneyness, m, sigma, rho, a, b, min_k, max_k)
 
-    # SVI is formulated with implie variance (sigma^2) as its value. Therefore,
+    # SVI is formulated with implied variance (sigma^2) as its value. Therefore,
     # we need to take a square root before squaring it
     return interp_impl_var .^ 0.5
 end
@@ -971,10 +924,10 @@ end
 
 # Function to calculate Call (Put) option value given OptionData and
 # an struct with interpolation parameters:
-function calc_option_value(spot, r, F, T, interp_params, strike, option_type)
+function calc_option_value(spot, r, F, T, interp_params, strike, min_K, max_K, option_type)
     # Getting implied vol for this particular strike given an interpolated
     # volatility smile
-    impl_vol = calc_interp_impl_vol(spot, interp_params, strike)
+    impl_vol = calc_interp_impl_vol(spot, interp_params, strike, min_K, max_K)
 
     if option_type == "Call"
         option_price = BS_call_price.(F * exp(-r*T), 0, r,
@@ -990,11 +943,11 @@ function calc_option_value(spot, r, F, T, interp_params, strike, option_type)
 end
 
 # Function to calculate Risk-Neutral CDF and PDF:
-function calc_RN_CDF_PDF(spot, r, F, T, interp_params, strike)
+function calc_RN_CDF_PDF(spot, r, F, T, interp_params, strike, min_K, max_K)
 
     # function to calculate call option price for a specific
     # option and interpolation parameters:
-    calc_specific_option_put_value = K -> calc_option_value(spot, r, F, T, interp_params, K, "Put")
+    calc_specific_option_put_value = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K, "Put")
 
     # First derivative of put(strike) function
     der_1_put = K -> ForwardDiff.derivative(calc_specific_option_put_value, K)
@@ -1040,11 +993,11 @@ function calc_VIX(option::OptionData)
 end
 
 
-function calc_V_IV_D(spot, r, F, T,  interp_params, low_limit, high_limit)
+function calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, low_limit, high_limit)
 
     # 1. First define call and put option prices as functions of the strike:
-    calc_option_value_put = K -> calc_option_value(spot, r, F, T, interp_params, K, "Put")
-    calc_option_value_call = K -> calc_option_value(spot, r, F, T, interp_params, K, "Call")
+    calc_option_value_put = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K, "Put")
+    calc_option_value_call = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K, "Call")
 
     # 2. Next define raw integrand functions. In the case that the upper limit of
     # integration is infinite I will need to modify with change of variables
@@ -1153,22 +1106,22 @@ end
 function estimate_parameters(spot, r, F, T, sigma_NTM, min_K, max_K, interp_params)
 
     # 1. Estimate V, IV using all data:
-    V, IV = calc_V_IV_D(spot, r, F, T, interp_params, 0, Inf)
-    V_in_sample, IV_in_sample = calc_V_IV_D(spot, r, F, T,  interp_params, min_K, max_K)
-    V_5_5, IV_5_5 = calc_V_IV_D(spot, r, F, T,  interp_params, max(0,spot*(1-5*sigma_NTM)), spot*(1+5*sigma_NTM))
+    V, IV = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, Inf)
+    V_in_sample, IV_in_sample = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, min_K, max_K)
+    V_5_5, IV_5_5 = calc_V_IV_D(spot, r, F, T,  interp_params, min_K, max_K, max(0,spot*(1-5*sigma_NTM)), spot*(1+5*sigma_NTM))
 
     # 2. Estimate V, IV only using OTM puts. This means that we can integrate
     # from 0 to spot, from lowest strike to spot and from 1-5*sigma to spot
     # V_otm, IV_otm = calc_V_IV_D(spot, r, F, T,  interp_params, 0, spot)
-    V_otm_in_sample, IV_otm_in_sample = calc_V_IV_D(spot, r, F, T,  interp_params, min_K, spot)
-    V_otm_5_5, IV_otm_5_5 = calc_V_IV_D(spot, r, F, T,  interp_params, max(0,spot*(1-5*sigma_NTM)), spot)
+    V_otm_in_sample, IV_otm_in_sample = calc_V_IV_D(spot, r, F, T,  interp_params, min_K, max_K, min_K, spot)
+    V_otm_5_5, IV_otm_5_5 = calc_V_IV_D(spot, r, F, T,  interp_params, min_K, max_K, max(0,spot*(1-5*sigma_NTM)), spot)
 
     # 3. Estimate V and IV using strikes for puts that are at least 1 sigma
     # away from spot. It means that we can integrate from 0 to spot*(1-sigma),
     # from lowest strike to spot*(1-sigma) and from spot*(1-5sigma) to spot*(1-sigma)
     if sigma_NTM < 1
         # V_otm1, IV_otm1 = calc_V_IV_D(spot, r, F, T,  interp_params, 0, spot * (1 - sigma_NTM))
-        V_otm1_in_sample, IV_otm1_in_sample = calc_V_IV_D(spot, r, F, T,  interp_params, min_K, spot * (1 - sigma_NTM))
+        V_otm1_in_sample, IV_otm1_in_sample = calc_V_IV_D(spot, r, F, T,  interp_params, min_K, max_K, min_K, spot * (1 - sigma_NTM))
         # V_otm1_5_5, IV_otm1_5_5 = calc_V_IV_D(spot, r, F, T,  interp_params, max(0,spot*(1-5*sigma_NTM)), spot * (1 - sigma_NTM))
     else
         # V_otm1, IV_otm1, V_otm1_in_sample, IV_otm1_in_sample, V_otm1_5_5, IV_otm1_5_5 = NaN, NaN, NaN, NaN, NaN, NaN
@@ -1176,10 +1129,10 @@ function estimate_parameters(spot, r, F, T, sigma_NTM, min_K, max_K, interp_para
     end
 
     # 4. RN probability of two sigma drop:
-    rn_prob_2sigma = calc_RN_CDF_PDF(spot, r, F, T,  interp_params, max(0, spot*(1-2*sigma_NTM)))[1]
+    rn_prob_2sigma = calc_RN_CDF_PDF(spot, r, F, T,  interp_params, min_K, max_K, max(0, spot*(1-2*sigma_NTM)))[1]
 
     # 5. Need 40% annualized decline. Not sure what annualized means
-    rn_prob_40ann = calc_RN_CDF_PDF(spot, r, F, T,  interp_params, max(0, spot*0.6^T))[1]
+    rn_prob_40ann = calc_RN_CDF_PDF(spot, r, F, T,  interp_params, min_K, max_K, max(0, spot*0.6^T))[1]
 
     return V, IV, V_in_sample, IV_in_sample, V_5_5, IV_5_5, V_otm_in_sample, IV_otm_in_sample,
         V_otm_5_5, IV_otm_5_5, V_otm1_in_sample, IV_otm1_in_sample,

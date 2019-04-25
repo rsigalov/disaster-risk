@@ -23,6 +23,7 @@ index_to_append = ARGS[1]
 print("\n--- Loading Data ----\n")
 
 svi_data = CSV.read(string("data/raw_data/svi_params_", index_to_append, ".csv"); datarow = 2, delim = ",")
+svi_data = svi_data[svi_data.opt_out .== "FTOL_REACHED", :]
 
 num_options = size(svi_data)[1]
 

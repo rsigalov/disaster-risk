@@ -25,7 +25,7 @@ index_to_append = ARGS[1]
 # index_to_append = "equity_1"
 
 # Loading data on options:
-opt_data_filepath = string("data/raw_data_new/opt_data_", index_to_append, ".csv")
+opt_data_filepath = string("data/raw_data/opt_data_", index_to_append, ".csv")
 df = CSV.read(opt_data_filepath; datarow = 2, delim = ",")
 df_size = size(df)[1]
 print(string("\n--- Total size of dataframe is ", df_size, " rows ---\n"))
@@ -52,12 +52,13 @@ num_options = size(df_unique)[1]
 
 print(string("\nHave ", num_options, " smiles in total to fit\n"))
 
-# Loading data on dividend distribution:
-dist_data_filepath = string("data/raw_data_new/dist_data_", index_to_append, ".csv")
-dist_hist = CSV.read(dist_data_filepath; datarow = 2, delim = ",")
+# Loading data on index dividend yield:
+div_yield_filepath = string("data/raw_data/div_yield_", index_to_append, ".csv")
+div_yield = CSV.read(div_yield_filepath; datarow = 2, delim = ",")
+div_yield = sort(div_yield, [:secid, :date])
 
 # Loading data on interest rate to interpolate cont-compounded rate:
-zcb = CSV.read("data/raw_data_new/zcb_data.csv"; datarow = 2, delim = ",")
+zcb = CSV.read("data/raw_data/zcb_data.csv"; datarow = 2, delim = ",")
 zcb = sort(zcb, [:date, :days])
 
 print("\n--- Generating array with options ----\n")
@@ -92,19 +93,10 @@ for subdf in groupby(df[1:df_limit, :], [:secid, :date, :exdate])
 
         int_rate = interp_rate(opt_days_maturity - 1)/100
 
-        index_before = (dist_hist.secid .== secid) .& (dist_hist.ex_date .<= exp_date) .& (dist_hist.ex_date .>= obs_date)
-        if count(index_before) == 0
-            dist_pvs = [0.0]
-        else
-            dist_days = Dates.value.(dist_hist[index_before, :].ex_date .- obs_date) .- 1
-            dist_amounts = dist_hist[index_before, :].amount
+        div_yield_cur = div_yield[(div_yield.date .== obs_date) .&
+                                  (div_yield.secid .== secid), :rate][1]/100
 
-            dist_rates = map(days -> interp_rate(days), dist_days)./100
-
-            dist_pvs = exp.(-dist_rates .* dist_days/365) .* dist_amounts
-        end
-
-        forward = (spot - sum(dist_pvs))/exp(-int_rate .* T)
+        forward = exp(-div_yield_cur*T)*spot/exp(-int_rate*T)
 
         ############################################################
         ### Additional filter related to present value of strike and dividends:
@@ -113,14 +105,18 @@ for subdf in groupby(df[1:df_limit, :], [:secid, :date, :exdate])
         # For Put options we should have P >= max{0, PV(K) + PV(dividends) - spot}
         # If options for certain strikes violate these conditions we should remove
         # them from the set of strikes
-        strikes_put = subdf[subdf.cp_flag .== "P",:strike_price]./1000
-        strikes_call = subdf[subdf.cp_flag .== "C", :strike_price]./1000
-        call_min = max.(0, spot .- strikes_call .* exp(-int_rate * T) .- sum(dist_pvs))
-        put_min = max.(0, strikes_put .* exp(-int_rate*T) .+ sum(dist_pvs) .- spot)
+        # strikes_put = subdf[subdf.cp_flag .== "P",:strike_price]./1000
+        # strikes_call = subdf[subdf.cp_flag .== "C", :strike_price]./1000
+        # call_min = max.(0, spot .- strikes_call .* exp(-int_rate * T) .- sum(dist_pvs))
+        # put_min = max.(0, strikes_put .* exp(-int_rate*T) .+ sum(dist_pvs) .- spot)
+        #
+        # df_filter = subdf[subdf.mid_price .>= [put_min; call_min],:]
+        # strikes = df_filter.strike_price./1000
+        # impl_vol = df_filter.impl_volatility
 
-        df_filter = subdf[subdf.mid_price .>= [put_min; call_min],:]
-        strikes = df_filter.strike_price./1000
-        impl_vol = df_filter.impl_volatility
+
+        strikes = subdf.strike_price./1000
+        impl_vol = subdf.impl_volatility
         if (length(strikes) >= 5) & (forward > 0)
             global i_option += 1
             option_arr[i_option] = OptionData(secid, obs_date, exp_date, spot, strikes,
@@ -182,4 +178,4 @@ svi_data_out = DataFrame(secid = map(x -> x.secid, option_arr),
                          obj = map(x -> x.obj, svi_arr),
                          opt_out = map(x -> x.opt_result, svi_arr))
 
-CSV.write(string("data/raw_data_new/svi_params_", index_to_append, ".csv"), svi_data_out)
+CSV.write(string("data/raw_data/svi_params_", index_to_append, ".csv"), svi_data_out)

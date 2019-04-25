@@ -23,96 +23,9 @@ struct SVIParams
     opt_result
 end
 
-function interpolate_int_rate(date_obs, date_val, zcb)
-
-    opt_days_maturity = Dates.value(date_val - date_obs)
-
-    # pick the last date before the obs_date. If there is such a date
-    # then it will be picked:
-    unique_dates = unique(zcb[:date])
-    unique_dates_before = unique_dates[unique_dates .<= date_obs]
-    date_obs = unique_dates_before[end]
-
-
-    zcb_sub = zcb[zcb[:date] .== date_obs, :]
-    x = zcb_sub[:days]
-    y = zcb_sub[:rate]
-
-    if opt_days_maturity <= minimum(x)
-        int_rate = y[1]
-    elseif opt_days_maturity >= maximum(x)
-        int_rate = y[end]
-    else
-        x1 = x[x .<= opt_days_maturity][end]
-        y1 = y[x .<= opt_days_maturity][end]
-
-        x2 = x[x .> opt_days_maturity][1]
-        y2 = y[x .> opt_days_maturity][1]
-
-        int_rate = y1 + (y2 - y1) * (opt_days_maturity - x1)/(x2-x1)
-    end
-
-    return int_rate/100
-end
-
-function fit_svi_zero_rho_grid(option::OptionData)
-    log_moneyness = log.(option.strikes ./ option.spot)
-    impl_var = option.impl_vol .^ 2
-    # T = Dates.value(option.exdate - option.date)
-    T = option.T
-
-    # Performing grid search to find good starting values for
-    # numerical optimization over (m, sigma)
-    dim_m_grid = 30
-    range_m_grid = LinRange(-1, 1, dim_m_grid)
-    dim_sigma_grid = 30
-    range_sigma_grid = LinRange(0.00001, 10, dim_sigma_grid)
-    obj_grid = ones(dim_m_grid, dim_sigma_grid) .* Inf
-
-    function to_minimize(x::Vector, grad::Vector)
-        beta_opt, obj = obj_bdbg_fix_m_sigma(x[1], x[2], log_moneyness, impl_var, T)
-        return obj
-    end
-
-    for i = 1:dim_m_grid
-        for j = 1:dim_sigma_grid
-            obj_grid[i,j] = to_minimize([range_m_grid[i], range_sigma_grid[j]], [0, 0])
-        end
-    end
-
-    index_min = findmin(obj_grid)[2]
-    i_min = index_min[1]
-    j_min = index_min[2]
-
-    m_start = range_m_grid[i_min]
-    sigma_start = range_sigma_grid[j_min]
-    x0 = [m_start, sigma_start]
-
-    opt = Opt(:LN_COBYLA, 2)
-    lower_bounds!(opt, [-1, 0.00001])
-    upper_bounds!(opt, [1, Inf])
-    ftol_abs!(opt, 1e-12)
-
-    min_objective!(opt, to_minimize)
-    (minf,minx,ret) = optimize(opt, x0)
-
-    m_opt = minx[1]
-    sigma_opt = minx[2]
-    rho_opt = 0
-
-    # Getting optimal values of a and b implied by m and sigma:
-    beta_opt, obj = obj_bdbg_fix_m_sigma(m_opt, sigma_opt, log_moneyness, impl_var, T)
-    a_opt = beta_opt[1]
-    b_opt = beta_opt[2]/sigma_opt
-
-    # Constructing SVIparams struct for outputting the result:
-    return SVIParams(m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret)
-end
-
 function fit_svi_zero_rho_global(option::OptionData)
     log_moneyness = log.(option.strikes ./ option.spot)
     impl_var = option.impl_vol .^ 2
-    # T = Dates.value(option.exdate - option.date)
     T = option.T
 
     function to_minimize(x::Vector, grad::Vector)
@@ -145,108 +58,11 @@ function fit_svi_zero_rho_global(option::OptionData)
 
     # Getting optimal values of a and b implied by m and sigma:
     beta_opt, obj = obj_bdbg_fix_m_sigma(m_opt, sigma_opt, log_moneyness, impl_var, T)
-    a_opt = beta_opt[1]
-    b_opt = beta_opt[2]/sigma_opt
+    # a_opt = beta_opt[1]
+    # b_opt = beta_opt[2]/sigma_opt
 
-    return SVIParams(m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret)
-end
-
-function fit_svi_var_rho_smile_grid(option::OptionData)
-    log_moneyness = log.(option.strikes ./ option.spot)
-    impl_var = option.impl_vol .^ 2
-    # T = Dates.value(option.exdate - option.date)
-    T = option.T
-
-    # Performing grid search to find good starting values for
-    # numerical optimization over (m, sigma)
-    dim_m_grid = 30
-    range_m_grid = LinRange(-1, 1, dim_m_grid)
-    dim_sigma_grid = 30
-    range_sigma_grid = LinRange(0.00001, 10, dim_sigma_grid)
-    dim_rho_grid = 10
-    range_rho_grid = LinRange(-1, 1, dim_rho_grid)
-    obj_grid = ones(dim_m_grid, dim_sigma_grid, dim_rho_grid) .* Inf
-
-    function to_minimize(x::Vector, grad::Vector)
-        beta_opt, obj = obj_var_rho_fixed_m_sigma(x[1], x[2], x[3], log_moneyness, impl_var, T)
-        return obj
-    end
-
-    for i = 1:dim_m_grid
-        for j = 1:dim_sigma_grid
-            for k = 1:dim_rho_grid
-                obj_grid[i,j,k] = to_minimize([range_m_grid[i], range_sigma_grid[j], range_rho_grid[k]], [0, 0])
-            end
-        end
-    end
-
-    index_min = findmin(obj_grid)[2]
-    i_min = index_min[1]
-    j_min = index_min[2]
-    k_min = index_min[3]
-
-    m_start = range_m_grid[i_min]
-    sigma_start = range_sigma_grid[j_min]
-    rho_start = range_rho_grid[k_min]
-    x0 = [m_start, sigma_start, rho_start]
-
-    opt = Opt(:LN_COBYLA, 3)
-    lower_bounds!(opt, [-1, 0.00001, -1])
-    upper_bounds!(opt, [1, Inf, 1])
-    ftol_abs!(opt, 1e-8)
-
-    min_objective!(opt, to_minimize)
-    (minf,minx,ret) = optimize(opt, x0)
-
-    m_opt = minx[1]
-    sigma_opt = minx[2]
-    rho_opt = minx[3]
-
-    # Getting optimal values of a and b implied by m and sigma:
-    beta_opt, obj = obj_var_rho_fixed_m_sigma(m_opt, sigma_opt, rho_opt, log_moneyness, impl_var, T)
-    a_opt = beta_opt[1]
-    b_opt = beta_opt[2]
-
-    return SVIParams(m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret)
-end
-
-function fit_svi_var_rho_smile_global(option::OptionData)
-    print("Done with global")
-    log_moneyness = log.(option.strikes ./ option.spot)
-    impl_var = option.impl_vol .^ 2
-    # T = Dates.value(option.exdate - option.date)
-    T = option.T
-
-    function to_minimize(x::Vector, grad::Vector)
-        beta_opt, obj = obj_var_rho_fixed_m_sigma(x[1], x[2], x[3], log_moneyness, impl_var, T)
-        return obj
-    end
-
-    opt1 = Opt(:GN_DIRECT_L, 3)
-    lower_bounds!(opt1, [-1, 0.00001, -1])
-    upper_bounds!(opt1, [1, 10, 1])
-    ftol_abs!(opt1, 1e-8)
-
-    min_objective!(opt1, to_minimize)
-    x0 = [-0.9, 2, 0]
-    (minf,minx,ret) = optimize(opt1, x0)
-
-    opt2 = Opt(:LN_COBYLA, 3)
-    lower_bounds!(opt2, [-1, 0.00001, -1])
-    upper_bounds!(opt2, [1, Inf, 1])
-    ftol_abs!(opt2, 1e-12)
-
-    min_objective!(opt2, to_minimize)
-    (minf,minx,ret) = optimize(opt2, minx)
-
-    m_opt = minx[1]
-    sigma_opt = minx[2]
-    rho_opt = minx[3]
-
-    # Getting optimal values of a and b implied by m and sigma:
-    beta_opt, obj = obj_var_rho_fixed_m_sigma(m_opt, sigma_opt, rho_opt, log_moneyness, impl_var, T)
-    a_opt = beta_opt[1]
-    b_opt = beta_opt[2]
+    a_opt = beta_opt[1]/T
+    b_opt = beta_opt[2]/(sigma_opt * T)
 
     return SVIParams(m_opt, sigma_opt, rho_opt, a_opt, b_opt, minf, ret)
 end
@@ -261,8 +77,8 @@ end
 
 # Adding function to support clamping of svi-smile at endpoints
 # of minimum and maximum log-moneyness
-
 function svi_smile(k, m, sigma, rho, a, b, min_k, max_k)
+
     if k .< min_k
         return a .+ b.*(rho.*(min_k.-m) .+ sqrt.((min_k .- m).^2 .+ sigma.^2))
     elseif k .> max_k
@@ -270,6 +86,8 @@ function svi_smile(k, m, sigma, rho, a, b, min_k, max_k)
     else
         return a .+ b.*(rho.*(k.-m) .+ sqrt.((k .- m).^2 .+ sigma.^2))
     end
+
+    return a .+ b.*(rho.*(k.-m) .+ sqrt.((k .- m).^2 .+ sigma.^2))
 end
 
 function  satisfies_constraints(sigma, beta, max_v)
@@ -320,7 +138,8 @@ function obj_bdbg_fix_m_sigma(m, sigma, log_moneyness, impl_var, T)
     N = length(log_moneyness)
     y = (log_moneyness .- m)./sigma
     y_hyp = sqrt.(y.^2 .+ 1)
-    v = impl_var
+    # v = impl_var
+    v = impl_var * T
     v = hcat(v...)' # Transforming into 2-dim array
 
     min_obj = Inf
@@ -391,98 +210,6 @@ function obj_bdbg_fix_m_sigma(m, sigma, log_moneyness, impl_var, T)
 end
 
 ############################################################
-# Supporting functions for SVI fitting with variable rho
-############################################################
-
-function satisfies_constraints_var_rho(beta, sigma, rho, max_v)
-    a = beta[1]
-    c = beta[2]
-
-    satisfies = true
-    if c < 0 || c > 4/(1+abs(rho)) || a < -c*sigma*sqrt(1-rho^2) || a > max_v
-        satisfies = false
-    end
-
-    return satisfies
-end
-
-function calculate_and_update_beta_var_rho(X, v, min_obj, beta_opt, sigma, rho, max_v, R = missing, b = missing)
-    beta = constrained_opt(X, v, R, b)
-    if satisfies_constraints_var_rho(beta, sigma, rho, max_v)
-        beta_opt, min_obj = compare_and_update_beta(X, v, beta, min_obj, beta_opt)
-    end
-
-    return beta_opt, min_obj
-end
-
-function obj_var_rho_fixed_m_sigma(m, sigma, rho, log_moneyness, impl_var, T)
-    N = length(log_moneyness)
-    y = (log_moneyness .- m)./sigma
-    y_hyp = rho .* sigma .* y .+ sigma .* sqrt.(y.^2 .+ 1)
-    v = impl_var
-    v = hcat(v...)' # Transforming into 2-dim array
-
-    min_obj = Inf
-    beta_opt = zeros(2,1)
-
-    ########################################################
-    # 1. Looking for internal optimum
-    # Minimizing the sum of squares (doing linear regression)
-    # and checking if it satisfies no arbitrage constraints
-    # on coefficients:
-    X = ones(N,2)
-    X[:, 2] = y_hyp
-    max_v = maximum(v)
-
-    beta_opt, min_obj = calculate_and_update_beta_var_rho(X, v, min_obj, beta_opt, sigma, rho, max_v)
-
-    if isequal(min_obj, Inf)
-        ########################################################
-        # 2. Looking at sides of parallelepipid:
-        # i. c = 0
-        R = hcat([0,1]...)
-        b = hcat([0]...)
-        beta_opt, min_obj = calculate_and_update_beta_var_rho(X, v, min_obj, beta_opt, sigma, rho, max_v, R, b)
-
-        # ii. c = 4/(1+|rho|)
-        R = hcat([0,1]...)
-        b = hcat([4/(1 + abs(rho))]...)
-        beta_opt, min_obj = calculate_and_update_beta_var_rho(X, v, min_obj, beta_opt, sigma, rho, max_v, R, b)
-
-        # iii. a = -c*sigma*sqrt(1-rho^2) => a + c*sigma*sqrt(1-rho^2) = 0
-        R = hcat([1, sigma*sqrt(1-rho^2)]...)
-        b = hcat([0]...)
-        beta_opt, min_obj = calculate_and_update_beta_var_rho(X, v, min_obj, beta_opt, sigma, rho, max_v, R, b)
-
-        # iv. a = max_v
-        R = hcat([1, 0]...)
-        b = hcat([max_v]...)
-        beta_opt, min_obj = calculate_and_update_beta_var_rho(X, v, min_obj, beta_opt, sigma, rho, max_v, R, b)
-
-        ########################################################
-        # 3. Calculating objective in vertices of the constraints
-        # rectangle
-        # i. a = 0, c = 0
-        beta_vert_1 = hcat([0,0]...)'
-        beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_1, min_obj, beta_opt)
-
-        # ii. a = -4*sigma*sqrt(1-rho^2)/(1+|rho|), c = 4/(1+|rho|)
-        beta_vert_2 = hcat([-4 * sigma * sqrt(1-rho^2)/(1+abs(rho)), 4/(1+abs(rho))]...)'
-        beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_2, min_obj, beta_opt)
-
-        # iii. a = max_v, c = 4*sigma/(1+|rho|)
-        beta_vert_3 = hcat([max_v, 4*sigma/(1+abs(rho))]...)'
-        beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_3, min_obj, beta_opt)
-
-        # iv. a = max_v, c = 0
-        beta_vert_4 = hcat([max_v, 0]...)'
-        beta_opt, min_obj = compare_and_update_beta(X, v, beta_vert_4, min_obj, beta_opt)
-    end
-
-    return beta_opt, min_obj
-end
-
-############################################################
 # Plotting the results
 ############################################################
 
@@ -513,22 +240,24 @@ function plot_vol_smile(option::OptionData, params::SVIParams,
     return ax
 end
 
-function plot_vol_smile(option::OptionData, params::Spline1D,
+function plot_vol_smile(spot, strikes, impl_vol, params::SVIParams,
                          label, ax = Missing, col_scatter = "b", col_line = "r")
     if isequal(ax, Missing)
         fig = figure("An example", figsize=(10,8));
         ax = fig[:add_subplot](1,1,1);
     end
 
-    log_moneyness = log.(option.strikes/option.spot)
-    impl_var = option.impl_vol.^2
+    log_moneyness = log.(strikes/spot)
+    impl_var = impl_vol.^2
 
     range_log_moneyness = log_moneyness[end] - log_moneyness[1]
-    plot_range = LinRange(log_moneyness[1] - range_log_moneyness*0.50,
-                          log_moneyness[end] + range_log_moneyness*0.50, 1000);
+    plot_range = LinRange(log_moneyness[1] - range_log_moneyness*0.20,
+                          log_moneyness[end] + range_log_moneyness*0.20, 1000);
 
     ax[:scatter](log_moneyness, impl_var, alpha = 0.25, c = col_scatter)
-    ax[:plot](plot_range, evaluate(params, plot_range),
+    ax[:plot](plot_range, svi_smile(plot_range, params.m,
+                                    params.sigma, params.rho,
+                                    params.a, params.b),
               c = col_line, linewidth = 1)
 
     ax[:set_title](label)
@@ -537,43 +266,6 @@ function plot_vol_smile(option::OptionData, params::Spline1D,
 
     return ax
 end
-
-# This function has the same name but different type of parameter
-# argumet. It will figure out on its own which one to use when
-# I pass a particular type of parameters
-
-function plot_vol_smile(option::OptionData, params::CubicSplineParams,
-                         label, ax = Missing)
-    if isequal(ax, Missing)
-     fig = figure("An example", figsize=(10,8));
-     ax = fig[:add_subplot](1,1,1);
-    end
-
-    # defining helper function
-    function calculateSplineVolInstance(x)
-        return calculateSplineVol(x, params)
-    end
-
-    fig = figure("An example", figsize=(10,8));
-    ax = fig[:add_subplot](1,1,1);
-
-    log_moneyness = log.(option.strikes/option.spot)
-    range_log_moneyness = log_moneyness[end] - log_moneyness[1]
-
-    plot_range = LinRange(log_moneyness[1] - range_log_moneyness*0.05,
-                          log_moneyness[end] + range_log_moneyness*0.05, 1000);
-
-    ax[:scatter](log_moneyness, option.impl_vol, alpha = 0.25, c = "b")
-    ax[:plot](plot_range, map(calculateSplineVolInstance, plot_range), alpha = 0.25,
-              c = "r", linewidth = 1)
-
-    ax[:set_title]("Title")
-    ax[:set_xlabel]("log(Strike/Spot)")
-    ax[:set_ylabel]("Implied Variance")
-
-    return ax
-end
-
 
 
 ################################################################
@@ -630,11 +322,11 @@ end
 # Function to calculate interpolated implied volatility for a
 # given OptionData and Cubic Spline interpolated volatility smile
 # it has the same name, but different argument type. Julia takes care of it
-function calc_interp_impl_vol(option::OptionData, interp_params::CubicSplineParams, strike)
-    log_moneyness = log.(strike/option.spot)
-
-    return calculateSplineVol(log_moneyness, interp_params)
-end
+# function calc_interp_impl_vol(option::OptionData, interp_params::CubicSplineParams, strike)
+#     log_moneyness = log.(strike/option.spot)
+#
+#     return calculateSplineVol(log_moneyness, interp_params)
+# end
 
 # Function to calculate Call (Put) option value given OptionData and
 # an struct with interpolation parameters:
@@ -758,7 +450,7 @@ function calc_V_IV_D(option::OptionData, interp_params, low_limit, high_limit)
             W = hquadrature(W1, 0, 1)[1]
             X = hquadrature(X1, 0, 1)[1]
 
-            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+            mu = exp(r*T) - 1 - exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
 
             # Computing variation:
             variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
@@ -778,10 +470,10 @@ function calc_V_IV_D(option::OptionData, interp_params, low_limit, high_limit)
             X1 = t -> X1_raw(spot + t/(1-t))/(1-t)^2
 
             V = hquadrature(V1, 0, 1)[1] + hquadrature(V2_raw, low_limit, spot)[1]
-            W = hquadrature(W1, 0, 1)[1] + hquadrature(W2_raw, low_limit, spot)[1]
+            W = hquadrature(W1, 0, 1)[1] - hquadrature(W2_raw, low_limit, spot)[1]
             X = hquadrature(X1, 0, 1)[1] + hquadrature(X2_raw, low_limit, spot)[1]
 
-            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+            mu = exp(r*T) - 1 - exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
 
             variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
 
@@ -808,14 +500,14 @@ function calc_V_IV_D(option::OptionData, interp_params, low_limit, high_limit)
             W = hquadrature(W2_raw, low_limit, high_limit)[1]
             X = hquadrature(X2_raw, low_limit, high_limit)[1]
 
-            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+            mu = exp(r*T) - 1 - exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
 
             variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
         else
             integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, spot, high_limit)[1] + hquadrature(IV2, low_limit, spot)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
 
             V = hquadrature(V1_raw, spot, high_limit)[1] + hquadrature(V2_raw, low_limit, spot)[1]
-            W = hquadrature(W1_raw, spot, high_limit)[1] + hquadrature(W2_raw, low_limit, spot)[1]
+            W = hquadrature(W1_raw, spot, high_limit)[1] - hquadrature(W2_raw, low_limit, spot)[1]
             X = hquadrature(X1_raw, spot, high_limit)[1] + hquadrature(X2_raw, low_limit, spot)[1]
 
             mu = exp(r*T) - 1 - exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
@@ -890,8 +582,56 @@ end
 # is no need to carry around all strikes and implied volatility arrays
 ########################################################################
 
+
+
+################################################
+# Calculating Black-Scholes Price
+# function to calculate BS price for an asset with
+# continuously compounded dividend at rate q. Can be
+# accomodated to calculate price of option for an
+# asset with discrete known ndividends
+function BS_call_price(S0, q, r, K, sigma, T)
+    d1 = (log(S0/K) + (r - q + sigma^2/2)*T)/(sigma*sqrt(T))
+    d2 = d1 - sigma*sqrt(T)
+
+    p1 = exp(-q*T) * S0 * cdf.(Normal(), d1)
+    p2 = exp(-r*T) * K * cdf.(Normal(), d2)
+
+    return p1 - p2
+end
+
+function BS_put_price(S0, q, r, K, sigma, T)
+    d1 = (log(S0/K) + (r - q + sigma^2/2)*T)/(sigma*sqrt(T))
+    d2 = d1 - sigma*sqrt(T)
+
+    p1 = cdf.(Normal(), -d2) * K * exp(-r*T)
+    p2 = cdf.(Normal(), -d1) * S0 * exp(-q*T)
+
+    return p1 - p2
+end
+
+
 # Function to calculate interpolated implied volatility for a
-# given OptionData and SVI interpolated volatility smile
+# given OptionData and SVI interpolated volatility smile. This first function
+# interpolates vol using SVi when SVI is extrapolated (i.e. not clamped)
+function calc_interp_impl_vol(spot, interp_params::SVIParams, strike)
+    log_moneyness = log.(strike/spot) # SVI was interpolated as a function of
+                                      # the log of the ratio of strike to
+                                      # current spot price of the underlying asset
+
+    m = interp_params.m
+    sigma = interp_params.sigma
+    rho = interp_params.rho
+    a = interp_params.a
+    b = interp_params.b
+
+    interp_impl_var = svi_smile(log_moneyness, m, sigma, rho, a, b)
+
+    # SVI is formulated with implied variance (sigma^2) as its value. Therefore,
+    # we need to take a square root before squaring it
+    return interp_impl_var .^ 0.5
+end
+
 function calc_interp_impl_vol(spot, interp_params::SVIParams, strike, min_K, max_K)
     log_moneyness = log.(strike/spot) # SVI was interpolated as a function of
                                       # the log of the ratio of strike to
@@ -913,17 +653,28 @@ function calc_interp_impl_vol(spot, interp_params::SVIParams, strike, min_K, max
     return interp_impl_var .^ 0.5
 end
 
-# Function to calculate interpolated implied volatility for a
-# given OptionData and Cubic Spline interpolated volatility smile
-# it has the same name, but different argument type. Julia takes care of it
-function calc_interp_impl_vol(spot, interp_params::CubicSplineParams, strike)
-    log_moneyness = log.(strike/option.spot)
+# Function to calculate Call (Put) option value given OptionData and
+# an struct with interpolation parameters. This first function calculates
+# option value when SVI is extrapolated (i.e. not clamped)
+function calc_option_value(spot, r, F, T, interp_params, strike, option_type)
+    # Getting implied vol for this particular strike given an interpolated
+    # volatility smile
+    impl_vol = calc_interp_impl_vol(spot, interp_params, strike)
 
-    return calculateSplineVol(log_moneyness, interp_params)
+    if option_type == "Call"
+        option_price = BS_call_price.(F * exp(-r*T), 0, r,
+                                      strike, impl_vol, T)
+    elseif option_type == "Put"
+        option_price = BS_put_price.(F * exp(-r*T), 0, r,
+                                     strike, impl_vol, T)
+    else
+        error("option_type should be Call or Put")
+    end
+
+    return option_price
 end
 
-# Function to calculate Call (Put) option value given OptionData and
-# an struct with interpolation parameters:
+# This second function calculates option value when SVI is clamped
 function calc_option_value(spot, r, F, T, interp_params, strike, min_K, max_K, option_type)
     # Getting implied vol for this particular strike given an interpolated
     # volatility smile
@@ -942,12 +693,18 @@ function calc_option_value(spot, r, F, T, interp_params, strike, min_K, max_K, o
     return option_price
 end
 
+
+
 # Function to calculate Risk-Neutral CDF and PDF:
-function calc_RN_CDF_PDF(spot, r, F, T, interp_params, strike, min_K, max_K)
+function calc_RN_CDF_PDF(spot, r, F, T, interp_params, strike, min_K, max_K, clamped = false)
 
     # function to calculate call option price for a specific
     # option and interpolation parameters:
-    calc_specific_option_put_value = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K, "Put")
+    if clamped
+        calc_specific_option_put_value = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K, "Put")
+    else
+        calc_specific_option_put_value = K -> calc_option_value(spot, r, F, T, interp_params, K, "Put")
+    end
 
     # First derivative of put(strike) function
     der_1_put = K -> ForwardDiff.derivative(calc_specific_option_put_value, K)
@@ -993,11 +750,17 @@ function calc_VIX(option::OptionData)
 end
 
 
-function calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, low_limit, high_limit)
+function calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, low_limit, high_limit, clamped)
 
-    # 1. First define call and put option prices as functions of the strike:
-    calc_option_value_put = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K, "Put")
-    calc_option_value_call = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K, "Call")
+    # 1. First define call and put option prices as functions of the strike. If clamped requested
+    # us the corresponding function.
+    if clamped
+        calc_option_value_put = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K, "Put")
+        calc_option_value_call = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K, "Call")
+    else
+        calc_option_value_put = K -> calc_option_value(spot, r, F, T, interp_params, K, "Put")
+        calc_option_value_call = K -> calc_option_value(spot, r, F, T, interp_params, K, "Call")
+    end
 
     # 2. Next define raw integrand functions. In the case that the upper limit of
     # integration is infinite I will need to modify with change of variables
@@ -1034,7 +797,7 @@ function calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, low_limit, high
             W = hquadrature(W1, 0, 1, maxevals = 100000)[1]
             X = hquadrature(X1, 0, 1, maxevals = 100000)[1]
 
-            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+            mu = exp(r*T) - 1 - exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
 
             # Computing variation:
             variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
@@ -1054,10 +817,10 @@ function calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, low_limit, high
             X1 = t -> X1_raw(spot + t/(1-t))/(1-t)^2
 
             V = hquadrature(V1, 0, 1, maxevals = 100000)[1] + hquadrature(V2_raw, low_limit, spot, maxevals = 100000)[1]
-            W = hquadrature(W1, 0, 1, maxevals = 100000)[1] + hquadrature(W2_raw, low_limit, spot, maxevals = 100000)[1]
+            W = hquadrature(W1, 0, 1, maxevals = 100000)[1] - hquadrature(W2_raw, low_limit, spot, maxevals = 100000)[1]
             X = hquadrature(X1, 0, 1, maxevals = 100000)[1] + hquadrature(X2_raw, low_limit, spot, maxevals = 100000)[1]
 
-            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+            mu = exp(r*T) - 1 - exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
 
             variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
 
@@ -1073,7 +836,7 @@ function calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, low_limit, high
             W = hquadrature(W1_raw, low_limit, high_limit, maxevals = 100000)[1]
             X = hquadrature(X1_raw, low_limit, high_limit, maxevals = 100000)[1]
 
-            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+            mu = exp(r*T) - 1 - exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
 
             variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
 
@@ -1081,17 +844,17 @@ function calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, low_limit, high
             integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV2, low_limit, high_limit, maxevals = 100000)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
 
             V = hquadrature(V2_raw, low_limit, high_limit, maxevals = 100000)[1]
-            W = hquadrature(W2_raw, low_limit, high_limit, maxevals = 100000)[1]
+            W = -hquadrature(W2_raw, low_limit, high_limit, maxevals = 100000)[1]
             X = hquadrature(X2_raw, low_limit, high_limit, maxevals = 100000)[1]
 
-            mu = exp(r*T) - 1 + exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
+            mu = exp(r*T) - 1 - exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
 
             variation = exp(r*T)*(V/T - exp(-r*T)*mu^2/T)
         else
             integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, spot, high_limit, maxevals = 100000)[1] + hquadrature(IV2, low_limit, spot, maxevals = 100000)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
 
             V = hquadrature(V1_raw, spot, high_limit, maxevals = 100000)[1] + hquadrature(V2_raw, low_limit, spot, maxevals = 100000)[1]
-            W = hquadrature(W1_raw, spot, high_limit, maxevals = 100000)[1] + hquadrature(W2_raw, low_limit, spot, maxevals = 100000)[1]
+            W = hquadrature(W1_raw, spot, high_limit, maxevals = 100000)[1] - hquadrature(W2_raw, low_limit, spot, maxevals = 100000)[1]
             X = hquadrature(X1_raw, spot, high_limit, maxevals = 100000)[1] + hquadrature(X2_raw, low_limit, spot, maxevals = 100000)[1]
 
             mu = exp(r*T) - 1 - exp(r*T) * V/2 - exp(r*T)*W/6 - exp(r*T)*X/24
@@ -1141,5 +904,91 @@ function estimate_parameters(spot, r, F, T, sigma_NTM, min_K, max_K, interp_para
     # return V, IV, V_in_sample, IV_in_sample, V_5_5, IV_5_5, V_otm, IV_otm, V_otm_in_sample, IV_otm_in_sample,
     #     V_otm_5_5, IV_otm_5_5, V_otm1, IV_otm1, V_otm1_in_sample, IV_otm1_in_sample, V_otm1_5_5, IV_otm1_5_5,
     #     rn_prob_2sigma, rn_prob_40ann
+
+end
+
+
+# The following function calculates updated set of integrals including ones
+# that use clamped SVI
+function estimate_parameters_mix(spot, r, F, T, sigma_NTM, min_K, max_K, interp_params)
+
+    ################################################################
+    # Estimates with no clamps -- baseline SVI
+    ################################################################
+
+    # 1. Baseline estimate: 0 to infinity
+    V, IV = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, Inf, false)
+
+    # 2. In sample estimation: no extrapolation using only in-sample data
+    V_in_sample, IV_in_sample = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, min_K, max_K, false)
+
+    # 3. First way of dealing with divergent and explosive integrals: integrate
+    # from 0.01*spot to infinity.
+    V_bound, IV_bound = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0.01*spot, Inf, false)
+
+    # 4. Using only puts, i.e. integrating from 0 to spot
+    V_puts, IV_puts = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, spot, false)
+
+    # 5. Mixing only puts and bound at 0.01*spot, i.e. integrating from 0.01*spot to spot
+    V_bound_puts, IV_bound_puts = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0.01*spot, Inf, false)
+
+    if sigma_NTM < 1
+        # 6. Using deep out of the money puts, integrate from 0 to spot*(1-sigma)
+        V_deep_puts, IV_deep_puts = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, spot * (1 - sigma_NTM), false)
+
+        # 7. Mixing deep out of the money puts and bound at 0.01, integrate from 0.01*spot to spot*(1-sigma)
+        V_bound_deep_puts, IV_bound_deep_puts = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0.01*spot, spot * (1 - sigma_NTM), false)
+    else
+        V_deep_puts, IV_deep_puts = NaN, NaN
+        V_bound_deep_puts, IV_bound_deep_puts = NaN, NaN
+    end
+
+    ################################################################
+    # Estimates with clamped SVI
+    ################################################################
+    # 8. Integrating over whole suppose with clamped SVI
+    V_clamp, IV_clamp = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, Inf, true)
+
+    # 9. Clamped SVI and puts only
+    V_clamp_puts, IV_clamp_puts = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, spot, true)
+
+    # 10. Clamped SVI and deep out of the money puts
+    if sigma_NTM < 1
+        V_clamp_deep_puts, IV_clamp_deep_puts = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, spot * (1 - sigma_NTM), true)
+    else
+        V_clamp_deep_puts, IV_clamp_deep_puts = NaN, NaN
+    end
+
+    ################################################################
+    # Risk-Neutral probability of a large decline
+    ################################################################
+    # 11. RN probability of two sigma drop:
+    rn_prob_2sigma = calc_RN_CDF_PDF(spot, r, F, T, interp_params, min_K, max_K, max(0, spot*(1-2*sigma_NTM)), false)[1]
+
+    # 12. Need 40% annualized decline. Not sure what annualized means
+    rn_prob_40ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params, min_K, max_K, max(0, spot*0.6^T), false)[1]
+
+    return V, IV, V_in_sample, IV_in_sample, V_bound, IV_bound,
+           V_puts, IV_puts, V_bound_puts, IV_bound_puts,
+           V_deep_puts, IV_deep_puts, V_bound_deep_puts, IV_bound_deep_puts,
+           V_clamp, IV_clamp, V_clamp_puts, IV_clamp_puts,
+           V_clamp_deep_puts, IV_clamp_deep_puts, rn_prob_2sigma, rn_prob_40ann
+
+end
+
+
+function estimate_parameters_short(spot, r, F, T, sigma_NTM, min_K, max_K, interp_params)
+
+    V, IV = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, Inf, false)
+    V_clamp, IV_clamp = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, Inf, true)
+    return V, IV, V_clamp, IV_clamp
+
+end
+
+function estimate_parameters_clamp(spot, r, F, T, sigma_NTM, min_K, max_K, interp_params)
+
+    V_clamp, IV_clamp = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, Inf, true)
+
+    return V_clamp, IV_clamp
 
 end

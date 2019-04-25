@@ -23,7 +23,7 @@
     and o.impl_volatility is not null
     and o.strike_price/1000 > s.under_price
     and (o.best_offer + o.best_bid)/2 < s.under_price
-    and o.exdate - o.date <= 365*2
+    and o.exdate - o.date <= 365 * 0.5
     and o.exdate - o.date > 0
     and o.date >= _start_date_
     and o.date <= _end_date_
@@ -47,7 +47,7 @@
     and o.strike_price/1000 < s.under_price
     and (o.best_offer + o.best_bid)/2 < o.strike_price/1000
     and (o.best_offer + o.best_bid)/2 >= GREATEST(0, o.strike_price/1000 - s.under_price)
-    and o.exdate - o.date <= 365*2
+    and o.exdate - o.date <= 365 * 0.5
     and o.exdate - o.date > 0
     and o.date >= _start_date_
     and o.date <= _end_date_

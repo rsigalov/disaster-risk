@@ -89,7 +89,7 @@ def main(argv = None):
     print("")
     print("--- Saving option data ---")
     print("")
-    path_to_save_data = "data/raw_data/opt_data_" + index_to_save + ".csv"
+    path_to_save_data = "data/raw_data_new/opt_data_" + index_to_save + ".csv"
     df_prices.to_csv(path_to_save_data, index = False)
     
     end = time.time()
@@ -122,15 +122,13 @@ def main(argv = None):
     print("")
     print("--- Saving Distributions Data ---")
     print("")
-    dist_data.to_csv("data/raw_data/dist_data_" + index_to_save + ".csv", index = False)
+    dist_data.to_csv("data/raw_data_new/dist_data_" + index_to_save + ".csv", index = False)
 
     print("")
     print("--- Done! ---")
     print("")
-    
-
-
 
     
 if __name__ == "__main__": 
 	sys.exit(main(sys.argv))
+

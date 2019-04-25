@@ -402,6 +402,9 @@ for secid in secid_list:
 ############################################################
 # Getting all the data:
 ############################################################
+        
+file_list_to_load = os.listdir("output") 
+file_list_to_load  = [x for x in os.listdir("output")  if "var_ests_equity_" in x]
 
 downloaded_1996_2005_file_list = list(range(81, 100 + 1, 1)) + list(range(101, 169, 1)) + list(range(401, 489, 1)) + list(range(701, 727+1,1)) + list(range(1001, 1006+1, 1))
 
@@ -486,11 +489,13 @@ for i_measure in range(len(measure_list)):
 
 ########################################
 # Loading data back again:
-D_df_1 = pd.read_csv("D_df_all_test.csv")
-D_df_2 = pd.read_csv("D_df_all_test_2.csv")
-D_df = pd.merge(D_df_1, D_df_2, on = ["secid", "date"], how = "outer")
-D_df = D_df.drop(["Unnamed: 0_x", "Unnamed: 0_y"], axis = 1)
-D_df.to_csv("D_df_all_test.csv")
+#D_df_1 = pd.read_csv("D_df_all_test.csv")
+#D_df_2 = pd.read_csv("D_df_all_test_2.csv")
+#D_df = pd.merge(D_df_1, D_df_2, on = ["secid", "date"], how = "outer")
+#D_df = D_df.drop(["Unnamed: 0_x", "Unnamed: 0_y"], axis = 1)
+#D_df.to_csv("D_df_all_test.csv")
+#
+
 D_df = pd.read_csv("D_df_all_test.csv")
 
 
@@ -548,7 +553,6 @@ for (i_measure, measure) in enumerate(measure_list):
 
 shares_all_mon[["s_not_null" + x for x in measure_list]].plot(figsize = (10,8))
 shares_all_mon[["s_pos" + x for x in measure_list]].plot(figsize = (10,8))
-
 
 
 
@@ -657,10 +661,10 @@ import wrds
 db = wrds.Connection(wrds_username = "rsigalov")
 
 
-start_date = "'2003-03-25'"
-end_date = "'2003-03-25'"
-data_base = "OPTIONM.OPPRCD2003"
-secid = str(108161)
+start_date = "'2014-01-01'"
+end_date = "'2014-12-31'"
+data_base = "OPTIONM.OPPRCD2014"
+secid = str(102583)
 
 f = open("load_option_list.sql", "r")
 query = f.read()
@@ -673,7 +677,7 @@ query = query.replace('_data_base_', data_base)
 df_option_i = db.raw_sql(query)
 
 # saving this data
-df_option_i.to_csv("NKE_opt_example_data.csv")
+df_option_i.to_csv("cvs_data_2014.csv")
 
 # loading aapl dist_data:
 query = """
@@ -688,7 +692,7 @@ query = query.replace('\n', ' ').replace('\t', ' ')
 query = query.replace('_secid_', secid)
 dist_data = db.raw_sql(query)
 
-dist_data.to_csv("NKE_dist_example_data.csv")
+dist_data.to_csv("cvs_dist_data.csv")
 
 
 

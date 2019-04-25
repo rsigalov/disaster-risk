@@ -175,8 +175,14 @@ already_estimated = list(set(df["secid"]))
 to_estimate_2012_2017 = np.setdiff1d(np.array(to_estimate_2012_2017), np.array(already_estimated))
 print(len(to_estimate_2012_2017))
 
+
+
+
 ###############################################################
 # Creating a shell file to estimate:
+
+
+
 secid_to_estimate = to_estimate_1996_2005
 top_comps = len(secid_to_estimate)
 group_size = 30
@@ -248,6 +254,9 @@ for i_group in range(groups):
     f.write("\n")
     
 f.close()
+
+
+
 
 
 

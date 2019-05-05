@@ -25,7 +25,7 @@ index_to_append = ARGS[1]
 # index_to_append = "equity_1"
 
 # Loading data on options:
-opt_data_filepath = string("data/raw_data_new/opt_data_", index_to_append, ".csv")
+opt_data_filepath = string("data/raw_data/opt_data_", index_to_append, ".csv")
 df = CSV.read(opt_data_filepath; datarow = 2, delim = ",")
 df_size = size(df)[1]
 print(string("\n--- Total size of dataframe is ", df_size, " rows ---\n"))
@@ -53,15 +53,17 @@ num_options = size(df_unique)[1]
 print(string("\nHave ", num_options, " smiles in total to fit\n"))
 
 # Loading data on dividend distribution:
-dist_data_filepath = string("data/raw_data_new/dist_data_", index_to_append, ".csv")
+dist_data_filepath = string("data/raw_data/dist_data_", index_to_append, ".csv")
 dist_hist = CSV.read(dist_data_filepath; datarow = 2, delim = ",")
 
 # Loading data on interest rate to interpolate cont-compounded rate:
-zcb = CSV.read("data/raw_data_new/zcb_data.csv"; datarow = 2, delim = ",")
+zcb = CSV.read("data/raw_data/zcb_data.csv"; datarow = 2, delim = ",")
 zcb = sort(zcb, [:date, :days])
 
 print("\n--- Generating array with options ----\n")
 option_arr = Array{OptionData, 1}(undef, num_options)
+volume_arr = zeros(num_options) # Array to store sum of volume for each maturity
+open_interest_arr = zeros(num_options) # Array to store sum of open interest for each maturity
 i_option = 0
 
 df = sort(df, cols = [:secid, :date, :exdate, :strike_price])
@@ -125,14 +127,19 @@ for subdf in groupby(df[1:df_limit, :], [:secid, :date, :exdate])
             global i_option += 1
             option_arr[i_option] = OptionData(secid, obs_date, exp_date, spot, strikes,
                                               impl_vol, T, int_rate, forward)
+            volume_arr[i_option] = sum(subdf.volume)
+            open_interest_arr[i_option] = sum(subdf.open_interest)
         end
     end
 end
 
 option_arr = option_arr[1:i_option]
+volume_arr = volume_arr[1:i_option]
+open_interest_arr = open_interest_arr[1:i_option]
 num_options = length(option_arr) # Updating number of smiles to count only those
                                  # that have at least 5 options available after
                                  # additional present value filter
+
 
 print(string("\n--- ", num_options, " left after processing ---\n"))
 print("\n--- Doing stuff ---")
@@ -175,6 +182,8 @@ svi_data_out = DataFrame(secid = map(x -> x.secid, option_arr),
                          sigma_NTM = map(x -> calc_NTM_sigma(x), option_arr),
                          min_K = map(x -> minimum(x.strikes), option_arr),
                          max_K = map(x -> maximum(x.strikes), option_arr),
+                         volume = volume_arr,
+                         open_inetrest = open_interest_arr,
                          m = map(x -> x.m, svi_arr),
                          sigma = map(x -> x.sigma, svi_arr),
                          a = map(x -> x.a, svi_arr),
@@ -182,4 +191,4 @@ svi_data_out = DataFrame(secid = map(x -> x.secid, option_arr),
                          obj = map(x -> x.obj, svi_arr),
                          opt_out = map(x -> x.opt_result, svi_arr))
 
-CSV.write(string("data/raw_data_new/svi_params_", index_to_append, ".csv"), svi_data_out)
+CSV.write(string("data/raw_data/svi_params_", index_to_append, ".csv"), svi_data_out)

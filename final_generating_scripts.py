@@ -19,7 +19,7 @@ end_year = 2005
 for t in range(start_year, end_year + 1, 1):
     print(t)
     query = """
-        select secid, count(strike_price) as cnt 
+        select secid, count(strike_price) as cnt
         from OPTIONM.OPPRCD2008
         group by secid order by cnt desc
     """

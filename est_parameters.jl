@@ -50,7 +50,7 @@ svi_arr = map(i -> SVIParams(m_arr[i], sigma_arr[i], 0.0, a_arr[i], b_arr[i],
 print("\n--- Estimating parameters ---\n")
 print("\n--- First Pass ---\n")
 @time tmp = pmap(estimate_parameters, spot_arr[1:2], r_arr[1:2], F_arr[1:2], T_arr[1:2],
-                min_K_arr[1:2], max_K_arr[1:2], sigma_NTM_arr[1:2], svi_arr[1:2])
+                sigma_NTM_arr[1:2], min_K_arr[1:2], max_K_arr[1:2],  svi_arr[1:2])
 
 print("\n--- Second Pass ---\n")
 @time ests = pmap(estimate_parameters, spot_arr, r_arr,
@@ -58,48 +58,21 @@ print("\n--- Second Pass ---\n")
                   min_K_arr, max_K_arr, svi_arr)
 
 print("\n--- Outputting Data ---\n")
-df_out = DataFrame(secid = svi_data.secid,
+df_out = DataFrame(
+              secid = svi_data.secid,
               date = svi_data.obs_date,
               T = T_arr,
               V = map(x -> x[1], ests),
               IV = map(x -> x[2], ests),
               V_in_sample = map(x -> x[3], ests),
               IV_in_sample = map(x -> x[4], ests),
-              V_5_5 = map(x -> x[5], ests),
-              IV_5_5 = map(x -> x[6], ests),
-              V_otm_in_sample = map(x -> x[7], ests),
-              IV_otm_in_sample = map(x -> x[8], ests),
-              V_otm_5_5 = map(x -> x[9], ests),
-              IV_otm_5_5 = map(x -> x[10], ests),
-              V_otm1_in_sample = map(x -> x[11], ests),
-              IV_otm1_in_sample = map(x -> x[12], ests),
-              rn_prob_2sigma = map(x -> x[13], ests),
-              rn_prob_40ann = map(x -> x[14], ests))
-
-# df_out = DataFrame(secid = svi_data.secid,
-#               date = svi_data.obs_date,
-#               T = T_arr,
-#               V = map(x -> x[1], ests),
-#               IV = map(x -> x[2], ests),
-#               V_in_sample = map(x -> x[3], ests),
-#               IV_in_sample = map(x -> x[4], ests),
-#               V_5_5 = map(x -> x[5], ests),
-#               IV_5_5 = map(x -> x[6], ests),
-#               V_otm = map(x -> x[7], ests),
-#               IV_otm = map(x -> x[8], ests),
-#               V_otm_in_sample = map(x -> x[9], ests),
-#               IV_otm_in_sample = map(x -> x[10], ests),
-#               V_otm_5_5 = map(x -> x[11], ests),
-#               IV_otm_5_5 = map(x -> x[12], ests),
-#               V_otm1 = map(x -> x[13], ests),
-#               IV_otm1 = map(x -> x[14], ests),
-#               V_otm1_in_sample = map(x -> x[15], ests),
-#               IV_otm1_in_sample = map(x -> x[16], ests),
-#               V_otm1_5_5 = map(x -> x[17], ests),
-#               IV_otm1_5_5 = map(x -> x[18], ests),
-#               rn_prob_2sigma = map(x -> x[19], ests),
-#               rn_prob_40ann = map(x -> x[20], ests))
+              V_clamp = map(x -> x[5], ests),
+              IV_clamp = map(x -> x[6], ests),
+              rn_prob_2sigma = map(x -> x[7], ests),
+              rn_prob_20ann = map(x -> x[8], ests),
+              rn_prob_40ann = map(x -> x[9], ests),
+              rn_prob_60ann = map(x -> x[10], ests),
+              rn_prob_80ann = map(x -> x[11], ests)
+            )
 
 CSV.write(string("data/output/var_ests_", index_to_append, ".csv"), df_out)
-
-print("\n--- Done ---\n")

@@ -1,0 +1,8 @@
+sudo python load_zcb.py
+
+sudo python loading_data.py -s 107525 -b 2015 -e 2015 -o test_run 
+sudo julia -p 3 fit_smiles.jl test_run 
+sudo julia -p 3 est_parameters.jl test_run 
+sudo rm data/raw_data/opt_data_test_run.csv
+sudo rm data/raw_data/dist_data_test_run.csv
+

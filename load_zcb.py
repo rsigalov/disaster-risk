@@ -14,4 +14,4 @@ where days <= 365*3
 query_zcb = query_zcb.replace('\n', ' ').replace('\t', ' ')
 df_zcb = db.raw_sql(query_zcb)
 
-df_zcb.to_csv("data/raw_data_new/zcb_data.csv", index = False)
+df_zcb.to_csv("data/raw_data/zcb_data.csv", index = False)

@@ -1,0 +1,13 @@
+sudo python loading_data.py -s 108802.0,101386.0,108196.0,125133.0,109497.0,102901.0,116389.0,133907.0,211520.0,103404.0  -b 1996 -e 2017 -o final_part1_75
+sudo julia -p 7 fit_smiles.jl final_part1_75
+sudo julia -p 7 est_parameters.jl final_part1_75
+sudo rm data/raw_data/opt_data_final_part1_75.csv
+sudo rm data/raw_data/dist_data_final_part1_75.csv
+echo 'Done with group 75/73' >> tracking_file.txt
+
+sudo python loading_data.py -s 107201.0,210060.0,205071.0,210379.0,101243.0,134736.0,102068.0,105243.0,194069.0,166371.0  -b 1996 -e 2017 -o final_part1_76
+sudo julia -p 7 fit_smiles.jl final_part1_76
+sudo julia -p 7 est_parameters.jl final_part1_76
+sudo rm data/raw_data/opt_data_final_part1_76.csv
+sudo rm data/raw_data/dist_data_final_part1_76.csv
+echo 'Done with group 76/73' >> tracking_file.txt

@@ -4,15 +4,88 @@ import matplotlib.pyplot as plt
 import matplotlib
 from functools import reduce
 from sklearn.decomposition import PCA
+from scipy.sparse.linalg import eigs
 import os
 os.chdir('/Users/rsigalov/Documents/PhD/disaster-risk-revision')
 
 
-# Loading all data:
-file_list_to_load  = [x for x in os.listdir("output") if "var_ests_equity_" in x]
 
-measure_list = ["","_in_sample", "_5_5", "_otm_in_sample",
-                "_otm_5_5", "_otm1_in_sample"]
+# Loading all data:
+file_list_to_load  = [x for x in os.listdir("estimated_data/V_IV")]
+
+
+i_file = 0
+filename = "var_ests_final_part1_1.csv"
+
+df = pd.read_csv("estimated_data/V_IV/" + filename)
+
+measure_list = ["", "_in_sample", "_clamp"]
+
+for measure in measure_list:
+    df["D" + measure] = df["V" + measure] - df["IV" + measure]
+    
+df = df[["secid", "date", "T"] + ["D" + measure for measure in measure_list]]
+
+# Calculating interpolated D:
+T_30_days = 30/365
+
+for i_measure in range(len(measure_list)):
+    print(measure_list[i_measure])
+    df_short = df[["secid", "date", "T", "D" + measure_list[i_measure]]]
+    
+    secid_list = []
+    date_list = []
+    D_list = []
+    
+    for (name, sub_df) in df_short.groupby(["secid", "date"]):           
+        secid_list.append(name[0])
+        date_list.append(name[1])
+        
+        # Removing NaNs from interpolation function:
+        x = sub_df["T"]
+        y = sub_df["D" + measure_list[i_measure]]
+        stacked = np.vstack((x.T, y.T)).T
+
+        stacked_filter = stacked[~np.isnan(stacked).any(axis = 1)]
+        
+        x_new = stacked_filter[:,0]
+        y_new = stacked_filter[:,1]
+        
+        if x_new.shape[0] > 0:
+            D_list.append(np.interp(T_30_days, x_new, y_new))
+        else:
+            D_list.append(np.nan)
+    
+    D_df_to_merge = pd.DataFrame({"secid":secid_list, "date":date_list, "D":D_list})
+    D_df_to_merge = D_df_to_merge.sort_values(["secid", "date"])
+    
+    # Getting the first date of the month average the series:
+    D_df_to_merge = D_df_to_merge.replace([np.inf, -np.inf], np.nan)
+    D_df_to_merge.columns = ["secid", "date", "D" + measure_list[i_measure]]
+    
+    if i_measure == 0:
+        D_df = D_df_to_merge
+    else:
+        D_df = pd.merge(D_df, D_df_to_merge, on = ["secid", "date"])
+        
+
+
+
+
+############################################################
+# Comparing with results coming from Julia:
+dj = pd.read_csv("estimated_data/interpolated_D/int_D_clamp_days_30.0.csv")
+comp_df = pd.merge(D_df, dj, how = "inner", on = ["secid", "date"])
+
+comp_vec = comp_df["D_in_sample_x"] - comp_df["D_in_sample_y"]
+comp_vec = comp_vec[~comp_vec.isnull()]
+comp_vec[np.abs(comp_vec) > 1e-5].shape
+
+
+
+############################################################
+
+
 
 for i_file, filename in enumerate(file_list_to_load):
     if i_file % 10 == 0:
@@ -87,7 +160,20 @@ for i_measure in range(len(measure_list)):
         D_df = pd.merge(D_df, D_df_to_merge, on = ["secid", "date"])
         
 # Saving data:
-#D_df.to_csv("estimated_d_part_1.csv")        
+#D_df.to_csv("estimated_d_part_1.csv")   
+        
+        
+################################################################
+# Loading interpolated data series
+D_df = pd.read_csv("estimated_data/interpolated_D/int_D_clamp_days_30.csv")
+
+# Replacing Infs with NaNs:
+for var in ["D", "D_in_sample", "D_clamp"]:
+    D_df[var]
+
+
+var = "D"
+        
 
 # Filtering data. Require a secid to have at least 15 observations in a month to
 # be averaged to a monthly level. Require an secid to be present in 80% of the
@@ -100,11 +186,11 @@ D_df["date"] = pd.to_datetime(D_df["date"])
 D_df["date_trunc"] = D_df["date"] - pd.offsets.MonthBegin(1)
 
 def min_month_obs(x):
-    return x["D_5_5"].count() > 15
+    return x[var].count() > 15
 
 D_filter = D_df.groupby(["secid", "date_trunc"]).filter(min_month_obs)
 
-D_mon_mean = D_filter.groupby(["secid", "date_trunc"])["D_5_5"].mean().reset_index()
+D_mon_mean = D_filter.groupby(["secid", "date_trunc"])[var].mean().reset_index()
 
 ## Plotting for some companies
 #secid_list = np.unique(D_df["secid"])
@@ -114,13 +200,13 @@ D_mon_mean = D_filter.groupby(["secid", "date_trunc"])["D_5_5"].mean().reset_ind
 
 num_months = len(np.unique(D_mon_mean["date_trunc"]))
 def min_sample_obs(x):
-    return x["D_5_5"].count() > num_months*0.8
+    return x[var].count() > num_months * 0.8
 
 D_mon_mean_filter = D_mon_mean.groupby("secid").filter(min_sample_obs)
 len(np.unique(D_mon_mean_filter["secid"]))
 
 
-df_pivot = pd.pivot_table(D_mon_mean_filter, values = "D_5_5", 
+df_pivot = pd.pivot_table(D_mon_mean_filter, values = var, 
                           index=["date_trunc"], columns=["secid"], aggfunc=np.sum)
 df_pivot = df_pivot.sort_values("date_trunc")
 df_pivot.index = pd.to_datetime(df_pivot.index)
@@ -128,14 +214,18 @@ df_pivot.index = pd.to_datetime(df_pivot.index)
 # Replacing missing values with average across non-missing values:
 for i in range(len(df_pivot.columns)):
     df_pivot.iloc[np.array(np.isnan(df_pivot.iloc[:,i])), i] = np.nanmean(df_pivot.iloc[:,i])
-
-# Replacing negative values with zeros:
-for i in range(len(df_pivot.columns)):
-    df_pivot.iloc[np.array(df_pivot.iloc[:,i]) < 0, i] = 0
     
-# Removing truncating extremely large values:
+# Replacing inf and -inf with NaNs:
 for i in range(len(df_pivot.columns)):
-    df_pivot.iloc[np.array(df_pivot.iloc[:,i]) > 10, i] = 10
+    df_pivot.iloc[np.array(np.isnan(df_pivot.iloc[:,i])), i] = np.nanmean(df_pivot.iloc[:,i])
+
+## Replacing negative values with zeros:
+#for i in range(len(df_pivot.columns)):
+#    df_pivot.iloc[np.array(df_pivot.iloc[:,i]) < 0, i] = 0
+#    
+## Removing truncating extremely large values:
+#for i in range(len(df_pivot.columns)):
+#    df_pivot.iloc[np.array(df_pivot.iloc[:,i]) > 10, i] = 10
 
 X_D = np.array(df_pivot)   
 
@@ -143,6 +233,14 @@ w = eigs(np.corrcoef(X_D.T),1)[1][:,0].astype(float).flatten()
 w = w/np.sum(w)
 Dw = (X_D @ w.reshape(-1,1)).flatten()
 plt.plot(Dw)
+
+# Comparing with the average:
+mean_D = np.mean(X_D, axis = 1)
+plt.plot()
+
+
+
+
 
 
 

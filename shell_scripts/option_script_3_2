@@ -1,0 +1,22 @@
+sudo python load_zcb.py
+
+sudo python loading_data.py -s 203985.0,109563.0,161018.0,105511.0,166740.0,111075.0,207050.0,211110.0,204485.0,104644.0  -b 1996 -e 2017 -o final_part3_73
+sudo julia -p 7 fit_smiles.jl final_part3_73
+sudo julia -p 7 est_parameters.jl final_part3_73
+sudo rm data/raw_data/opt_data_final_part3_73.csv
+sudo rm data/raw_data/dist_data_final_part3_73.csv
+echo 'Done with group 73/73' >> tracking_file.txt
+
+sudo python loading_data.py -s 106508.0,106360.0,106678.0,140431.0,123254.0,134587.0,129553.0,111929.0,107220.0,102067.0  -b 1996 -e 2017 -o final_part3_74
+sudo julia -p 7 fit_smiles.jl final_part3_74
+sudo julia -p 7 est_parameters.jl final_part3_74
+sudo rm data/raw_data/opt_data_final_part3_74.csv
+sudo rm data/raw_data/dist_data_final_part3_74.csv
+echo 'Done with group 74/73' >> tracking_file.txt
+
+sudo python loading_data.py -s 105953.0,102288.0,101824.0,121581.0,103032.0,105919.0,106891.0,105730.0,109202.0,109117.0  -b 1996 -e 2017 -o final_part3_75
+sudo julia -p 7 fit_smiles.jl final_part3_75
+sudo julia -p 7 est_parameters.jl final_part3_75
+sudo rm data/raw_data/opt_data_final_part3_75.csv
+sudo rm data/raw_data/dist_data_final_part3_75.csv
+echo 'Done with group 75/73' >> tracking_file.txt

@@ -158,7 +158,7 @@ All these results suggest that risk-neutral probability of a certain percent dec
 
 #### Aggregate regressions
 
-For this part I used the same methodology as for **D**. First I calculated the cross-sectional mean of interpolated measure $\mathbb{P}_t^{Q}(r_{i,t+1} < -0.2)$ for each month to construct an aggregate series. Unlike the D series this one is not sensitive to outliers (as there are few) and, therefore, I didn't trim it. Next I filtered the data in the same way and also estimated the first principal component. First, I compare aggregate D and probability series in the Figure below
+For this part I used the same methodology as for **D**. First, I calculated the cross-sectional mean of interpolated measure $\mathbb{P}_t^{Q}(r_{i,t+1} < -0.2)$ for each month to construct an aggregate series. Unlike the D series this one is not sensitive to outliers (as there are few) and, therefore, I didn't trim it. Next I filtered the data in the same way and also estimated the first principal component. First, I compare aggregate D and probability series in the Figure below
 
 ![](/Users/rsigalov/Documents/PhD/disaster-risk-revision/images/compare_agg_D_and_prob.png)
 
@@ -175,6 +175,14 @@ $$ \mathbb{I}\{ret_{m,t+1} \le x\} = \alpha + \beta^{(x)} \cdot \overline{\mathb
 where $r_{m,t+1}$ is the return on S&P 500 and $ x \in \{-10\%,-9\%,\dots,-1\%, 0\%\}$. I then plot coefficient $\beta^{(x)}$ along with 95% confidence bands as a function of $x$ in the Figure below
 
 ![](/Users/rsigalov/Documents/PhD/disaster-risk-revision/images/agg_prob_forecast.png)
+
+#### Forming trading strategy on the basis of disaster measure
+
+Here we formed portfolios on the basis of calculated disaster measure: clamped D or the risk neutral  probability of a certain % decline in the stock price. In particular, 
+
+1. Each month we we calculated cross sectional 30% and 70% quantile of a disaster measure.
+2. We formed equal weighted portfolios of secids with disaster measure lower than 30% quantile and secids with disaster measure greater than 70% quantile.
+3. We long the portfolio with low disaster measure and short the portfolio with high disaster measure.
 
 
 

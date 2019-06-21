@@ -27,7 +27,9 @@ df.to_csv("estimated_data/crsp_data/crsp_monthly_index_returns.csv")
 query = """
     select 
         m.date, m.permno, m.permco, m.cusip,
-        case when (m.ret in (-66.0, -77.0, -88.0, -99.0)) then NULL else m.ret end as ret
+        case when (m.ret in (-66.0, -77.0, -88.0, -99.0)) then NULL else m.ret end as ret,
+        abs(prc) as prc, 
+        shrout
     from crsp.msf as m
     left join crsp.msenames as n
         on m.permno = n.permno

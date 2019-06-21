@@ -591,3 +591,42 @@ function estimate_parameters(spot, r, F, T, sigma_NTM, min_K, max_K, interp_para
         rn_prob_20ann, rn_prob_40ann, rn_prob_60ann, rn_prob_80ann
 
 end
+
+# In the following function I change the magnitude of disasters specifically
+# for indices since there are only a few months where S&P 500 declined by more
+# than 10% and only one month where S&P declined by more than 15% -- Oct 2008
+function estimate_parameters_index(spot, r, F, T, sigma_NTM, min_K, max_K, interp_params)
+
+    # (1) Full SVI V and IV
+    V, IV = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, Inf, false)
+    # (2) SVI with all intergrals estimated only from the minimum to maximum
+    # available strikes
+    V_in_sample, IV_in_sample = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, min_K, max_K, false)
+    # (3) SVI with clamps
+    V_clamp, IV_clamp = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, Inf, true)
+
+    ################################################################
+    # Risk-Neutral probability of a large decline
+    ################################################################
+    # 11. RN probability of two sigma drop:
+    if sigma_NTM < 0.5
+        rn_prob_2sigma = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+            max(0, spot*(1-2*sigma_NTM)^(12*T)), min_K, max_K,  false)[1]
+    else
+        rn_prob_2sigma = NaN
+    end
+
+    rn_prob_20ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.05)^(12*T)), min_K, max_K, false)[1]
+    rn_prob_40ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.1)^(12*T)), min_K, max_K, false)[1]
+    rn_prob_60ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.15)^(12*T)), min_K, max_K, false)[1]
+    rn_prob_80ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.2)^(12*T)), min_K, max_K, false)[1]
+
+    return V, IV, V_in_sample, IV_in_sample, V_clamp, IV_clamp, rn_prob_2sigma,
+        rn_prob_20ann, rn_prob_40ann, rn_prob_60ann, rn_prob_80ann
+
+
+end

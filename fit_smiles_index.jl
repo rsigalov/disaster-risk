@@ -48,6 +48,8 @@ df_unique_N = by(df, [:secid, :date, :exdate], number = :cp_flag => length)
 # we need to minimize over 4 variables:
 df_unique = df_unique_N[df_unique_N[:number] .>= 5, :][:, [:secid,:date,:exdate]]
 num_options = size(df_unique)[1]
+volume_arr = zeros(num_options) # Array to store sum of volume for each maturity
+open_interest_arr = zeros(num_options) # Array to store sum of open interest for each maturity
 # num_options = 1000
 
 print(string("\nHave ", num_options, " smiles in total to fit\n"))
@@ -98,34 +100,21 @@ for subdf in groupby(df[1:df_limit, :], [:secid, :date, :exdate])
 
         forward = exp(-div_yield_cur*T)*spot/exp(-int_rate*T)
 
-        ############################################################
-        ### Additional filter related to present value of strike and dividends:
-        ### Other filters are implemented in SQL query directly
-        # For call options we should have C >= max{0, spot - PV(K) - PV(dividends)}
-        # For Put options we should have P >= max{0, PV(K) + PV(dividends) - spot}
-        # If options for certain strikes violate these conditions we should remove
-        # them from the set of strikes
-        # strikes_put = subdf[subdf.cp_flag .== "P",:strike_price]./1000
-        # strikes_call = subdf[subdf.cp_flag .== "C", :strike_price]./1000
-        # call_min = max.(0, spot .- strikes_call .* exp(-int_rate * T) .- sum(dist_pvs))
-        # put_min = max.(0, strikes_put .* exp(-int_rate*T) .+ sum(dist_pvs) .- spot)
-        #
-        # df_filter = subdf[subdf.mid_price .>= [put_min; call_min],:]
-        # strikes = df_filter.strike_price./1000
-        # impl_vol = df_filter.impl_volatility
-
-
         strikes = subdf.strike_price./1000
         impl_vol = subdf.impl_volatility
         if (length(strikes) >= 5) & (forward > 0)
             global i_option += 1
             option_arr[i_option] = OptionData(secid, obs_date, exp_date, spot, strikes,
                                               impl_vol, T, int_rate, forward)
+            volume_arr[i_option] = sum(subdf.volume)
+            open_interest_arr[i_option] = sum(subdf.open_interest)
         end
     end
 end
 
 option_arr = option_arr[1:i_option]
+volume_arr = volume_arr[1:i_option]
+open_interest_arr = open_interest_arr[1:i_option]
 num_options = length(option_arr) # Updating number of smiles to count only those
                                  # that have at least 5 options available after
                                  # additional present value filter
@@ -171,6 +160,8 @@ svi_data_out = DataFrame(secid = map(x -> x.secid, option_arr),
                          sigma_NTM = map(x -> calc_NTM_sigma(x), option_arr),
                          min_K = map(x -> minimum(x.strikes), option_arr),
                          max_K = map(x -> maximum(x.strikes), option_arr),
+                         volume = volume_arr,
+                         open_inetrest = open_interest_arr,
                          m = map(x -> x.m, svi_arr),
                          sigma = map(x -> x.sigma, svi_arr),
                          a = map(x -> x.a, svi_arr),

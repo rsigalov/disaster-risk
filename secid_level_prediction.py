@@ -12,7 +12,7 @@ from pandasql import sqldf # for accessing pandas with SQL queries
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from statsmodels.stats import sandwich_covariance
-from statsmodels.iolib.summary2 import summary_col # Fo summarizing regression results
+from statsmodels.iolib.summary2 import summary_col # For summarizing regression results
 
 # Loading data:
 D_df = pd.read_csv("estimated_data/interpolated_D/int_D_clamp_days_30.csv")
@@ -114,7 +114,7 @@ oclink_best_match = pd.merge(oclink_best_match, ret_df[["date", "permno", "ret"]
 
 # Running regressions:
 results_all = smf.ols(formula = 'ret ~ D_clamp', data = oclink_best_match).fit()
-
+oclink_best_match.to_csv("estimated_data/final_regression_dfs/D_clamp_ret_filter.csv")
 
 ########################################################################################
 # Limiting the universe to (1) companies-months with at least 15 days of observations
@@ -178,13 +178,17 @@ df_secid_level_results = pd.DataFrame({"sample": sample_list,
                                        "se": se_list,
                                        "N": N_list})
 
+f = open("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/tables/pred_reg_ind_D.tex", "w")
+f.write(df_secid_level_results.to_latex())
+f.close()
+
 ################################################################################
 # Now we do predictive regressions using the probability of a large decline
 # interpolated to a 30 day level from existing options
 ################################################################################
 
 # Loading data:
-D_df = pd.read_csv("estimated_data/interpolated_D/int_D_clamp_days_30.csv")
+D_df = pd.read_csv("estimated_data/interpolated_D/int_D_clamp_days_60.csv")
 ret_df = pd.read_csv("estimated_data/crsp_data/crsp_monthly_returns.csv")
 oclink = pd.read_csv("estimated_data/crsp_data/optionmetrics_crsp_link.csv")
 
@@ -237,7 +241,7 @@ cov_hetero = sandwich_covariance.cov_hc1(res) # Replicates robust option in STAT
 cov_cluster_firm = sandwich_covariance.cov_cluster(res, reg_df['secid']) # Matches with one in STATA
 cov_cluster_month = sandwich_covariance.cov_cluster(res, reg_df['month_lead']) # Matches with one in STATA
 
-#### Double clustering by firm and year ####
+#### Double clustering by firm and year ############################################
 # To do it we need to calculate the covariance matrix with clustering
 # by firm and by time and add them together, then subtract covariance matrix 
 # with Heteroskedascity correction
@@ -297,7 +301,6 @@ cov_cluster_month = sandwich_covariance.cov_cluster(res, reg_filter_df['month_le
 # Double clustering by firm and year #
 cov_double_cluster = cov_cluster_firm + cov_cluster_month - cov_hetero
 
-
 # Merging filtered dataset on the full dataset to create a dummy for filtered
 # month-secid:
 reg_filter_df["dummy_filter"] = 1
@@ -308,7 +311,186 @@ reg_df.loc[reg_df["dummy_filter"].isnull(), "dummy_filter"] = 0
 reg_df.drop(columns = "dummy_ret_neg_20").to_csv("estimated_data/final_regression_dfs/rn_prob_decline_ret.csv", index = False)
 
 
+######################################################################################
+# Doing a trading strategy exercise. Going long bottom 30% of
+# companies by disaster measure and going short bottom 30% of 
+# companies by disaster measure.
+######################################################################################
+
+#reg_df = pd.read_csv("estimated_data/final_regression_dfs/rn_prob_decline_ret.csv")
+reg_df = pd.read_csv("estimated_data/final_regression_dfs/D_clamp_ret_filter.csv")
+#var = "rn_prob_20mon"
+var = "D_clamp"
+
+# 1. Calculate quantiles for each month:
+# Calculate outliers that we are not going to invest in:
+quant_low_out = reg_df.groupby("month_lead")[var].quantile(0.01).rename("quant_low_out")
+quant_high_out = reg_df.groupby("month_lead")[var].quantile(0.99).rename("quant_high_out")
+
+quant_low = reg_df.groupby("month_lead")[var].quantile(0.3).rename("quant_low")
+quant_high = reg_df.groupby("month_lead")[var].quantile(0.7).rename("quant_high")
+
+# 2. Merging on original dataframe and assigning buckets:
+reg_df = reg_df[["month_lead", var, "ret"]]
+reg_df = pd.merge(reg_df, quant_low, on = "month_lead", how = "inner")
+reg_df = pd.merge(reg_df, quant_high, on = "month_lead", how = "inner")
+reg_df = pd.merge(reg_df, quant_low_out, on = "month_lead", how = "inner")
+reg_df = pd.merge(reg_df, quant_high_out, on = "month_lead", how = "inner")
+
+reg_df["action"] = 0
+reg_df.loc[(reg_df[var] < reg_df["quant_low"]) & (reg_df[var] > reg_df["quant_low_out"]),
+           "action"] = 1
+reg_df.loc[(reg_df[var] > reg_df["quant_high"]) & (reg_df[var] < reg_df["quant_high_out"]),
+           "action"] = -1
+
+# 3. Doing equal weighted return based on action:
+reg_df["ret_strategy"] = reg_df["ret"] * reg_df["action"]
+strategy_ret = reg_df.groupby("month_lead")["ret_strategy"].mean()
+gross_ret = strategy_ret + 1
+cumprod = gross_ret.cumprod()
+cumprod.plot()
+
+# 4. Loading FF data to compare:
+ff_df = pd.read_csv("estimated_data/final_regression_dfs/ff_factors.csv")
+ff_df["date"] = [str(x) + "01" for x in ff_df["date"]]
+ff_df["date"] = pd.to_datetime(ff_df["date"], format = "%Y%m%d")
+ff_df["date"] = ff_df["date"] + pd.offsets.MonthEnd(0)
+for i in range(len(ff_df.columns) - 1):
+    ff_df.iloc[:,i+1] = ff_df.iloc[:,i+1]/100
+ff_df = ff_df.set_index("date")
+    
+# 4. Merging with strategy returns data:
+strategy_ret = pd.merge(strategy_ret, ff_df, left_index = True, right_index = True)
+strategy_ret = strategy_ret.drop("RF", axis = 1)
+
+# 6. Calculating cumulative log return:
+gross_ret = strategy_ret + 1
+log_ret = np.log(gross_ret)
+
+# 5. Dividing each column by its strandard deviation (to make them comparable):
+for i in range(len(log_ret.columns)):
+    log_ret.iloc[:,i] = log_ret.iloc[:,i]/(np.std(log_ret.iloc[:,i]))
+
+log_ret[["ret_strategy","Mkt-RF"]].cumsum().plot()
+plt.tight_layout()
+plt.savefig("images/portfolios_formed_on_disaster_prob/comp_1.pdf")
+
+log_ret[["ret_strategy", "HML", "SMB"]].cumsum().plot()
+plt.tight_layout()
+plt.savefig("images/portfolios_formed_on_disaster_prob/comp_2.pdf")
+
+log_ret[["ret_strategy", "CMA", "RMW"]].cumsum().plot()
+plt.tight_layout()
+plt.savefig("images/portfolios_formed_on_disaster_prob/comp_3.pdf")
+
+f = open("images/portfolios_formed_on_disaster_prob/correlation_with_ports.tex", "w")
+f.write(log_ret.corr().to_latex())
+f.close()
+
+# Regressing return of strategy on (1) Market, (2) 3 factors and (3) 5 factors
+strategy_ret = strategy_ret.rename({"Mkt-RF": "MKT"}, axis = 1)
+
+results1 = smf.ols(formula = "ret_strategy ~ MKT", data = strategy_ret*12).fit()
+results1.summary()
+
+results2 = smf.ols(formula = "ret_strategy ~ MKT + SMB + HML", data = strategy_ret*12).fit()
+results2.summary()
+
+results3 = smf.ols(formula = "ret_strategy ~ MKT  + SMB + HML + CMA + RMW", data = strategy_ret*12).fit()
+results3.summary()
+
+info_dict={'R-squared' : lambda x: f"{x.rsquared:.2f}",
+           'No. observations' : lambda x: f"{int(x.nobs):d}"}
+
+print(summary_col([results1,results2,results3], stars=False, float_format='%0.4f',
+                  regressor_order = ["Intercept", "MKT", "SMB", "HML", "CMA", "RMW"],
+                  info_dict = info_dict))
+
+# Calculating summary stats for the strategy and comparing with other portfolios:
+summary_stats = (strategy_ret*12).describe().loc[["mean", "std"]]
+summary_stats = summary_stats.append(summary_stats.loc["mean"]/summary_stats.loc["std"], 
+                                     ignore_index = True)
+summary_stats.index = ["mean", "std", "sharpe"]
+print(summary_stats)
 
 
 
+######################################################################################
+# Comparing strategy on D-clamp and risk neutral probability of 20% decline in the
+# price a company in the next month. First doing risk-neutral probability:
+######################################################################################
+reg_df = pd.read_csv("estimated_data/final_regression_dfs/D_clamp_ret_filter.csv")
+var = "D_clamp"
 
+# 1. Calculate quantiles for each month:
+# Calculate outliers that we are not going to invest in:
+quant_low_out = reg_df.groupby("month_lead")[var].quantile(0.01).rename("quant_low_out")
+quant_high_out = reg_df.groupby("month_lead")[var].quantile(0.99).rename("quant_high_out")
+
+quant_low = reg_df.groupby("month_lead")[var].quantile(0.3).rename("quant_low")
+quant_high = reg_df.groupby("month_lead")[var].quantile(0.7).rename("quant_high")
+
+# 2. Merging on original dataframe and assigning buckets:
+reg_df = reg_df[["month_lead", var, "ret"]]
+reg_df = pd.merge(reg_df, quant_low, on = "month_lead", how = "inner")
+reg_df = pd.merge(reg_df, quant_high, on = "month_lead", how = "inner")
+reg_df = pd.merge(reg_df, quant_low_out, on = "month_lead", how = "inner")
+reg_df = pd.merge(reg_df, quant_high_out, on = "month_lead", how = "inner")
+
+reg_df["action"] = 0
+reg_df.loc[(reg_df[var] < reg_df["quant_low"]) & (reg_df[var] > reg_df["quant_low_out"]),
+           "action"] = 1
+reg_df.loc[(reg_df[var] > reg_df["quant_high"]) & (reg_df[var] < reg_df["quant_high_out"]),
+           "action"] = -1
+
+# 3. Doing equal weighted return based on action:
+reg_df["ret_strategy"] = reg_df["ret"] * reg_df["action"]
+strategy_ret = reg_df.groupby("month_lead")["ret_strategy"].mean()
+
+# 4. Calculating cumulative log return:
+gross_ret = strategy_ret + 1
+log_ret = np.log(gross_ret)
+log_ret_rn_prob = log_ret
+
+# Now doing D-clamp
+reg_df = pd.read_csv("estimated_data/final_regression_dfs/rn_prob_decline_ret.csv")
+var = "rn_prob_20mon"
+
+# 1. Calculate quantiles for each month:
+# Calculate outliers that we are not going to invest in:
+quant_low_out = reg_df.groupby("month_lead")[var].quantile(0.01).rename("quant_low_out")
+quant_high_out = reg_df.groupby("month_lead")[var].quantile(0.99).rename("quant_high_out")
+
+quant_low = reg_df.groupby("month_lead")[var].quantile(0.3).rename("quant_low")
+quant_high = reg_df.groupby("month_lead")[var].quantile(0.7).rename("quant_high")
+
+# 2. Merging on original dataframe and assigning buckets:
+reg_df = reg_df[["month_lead", var, "ret"]]
+reg_df = pd.merge(reg_df, quant_low, on = "month_lead", how = "inner")
+reg_df = pd.merge(reg_df, quant_high, on = "month_lead", how = "inner")
+reg_df = pd.merge(reg_df, quant_low_out, on = "month_lead", how = "inner")
+reg_df = pd.merge(reg_df, quant_high_out, on = "month_lead", how = "inner")
+
+reg_df["action"] = 0
+reg_df.loc[(reg_df[var] < reg_df["quant_low"]) & (reg_df[var] > reg_df["quant_low_out"]),
+           "action"] = 1
+reg_df.loc[(reg_df[var] > reg_df["quant_high"]) & (reg_df[var] < reg_df["quant_high_out"]),
+           "action"] = -1
+
+# 3. Doing equal weighted return based on action:
+reg_df["ret_strategy"] = reg_df["ret"] * reg_df["action"]
+strategy_ret = reg_df.groupby("month_lead")["ret_strategy"].mean()
+
+# 4. Calculating cumulative log return:
+gross_ret = strategy_ret + 1
+log_ret = np.log(gross_ret)
+log_ret_d_clamp = log_ret
+
+# Finally comparing the tow series:
+log_ret = pd.merge(log_ret_rn_prob.rename("ret_sort_rn_prob"), 
+                   log_ret_d_clamp.rename("ret_sort_d_clamp"), 
+                   left_index = True, right_index = True)
+
+log_ret.cumsum().plot()
+plt.tight_layout()
+plt.savefig("images/portfolios_formed_on_disaster_prob/comp_4.pdf")

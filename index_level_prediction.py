@@ -12,7 +12,16 @@ import statsmodels.formula.api as smf
 from statsmodels.stats import sandwich_covariance
 from matplotlib import pyplot as plt
 
-D_df = pd.read_csv("estimated_data/disaster-risk-series/D_30.csv")
+D_df = pd.read_csv("estimated_data/disaster-risk-series/combined_disaster_df.csv")
+#D_df[(D_df["level"] == "ind") &
+#     (D_df["days"] == 30) &
+#     (D_df["agg_type"] == "mean_all") &
+#     (D_df["var"] == "D_clamp")]
+D_df = pd.pivot_table(
+        D_df, 
+        index = "date", values = "value",
+        columns = ["level", "var", "agg_type", "days"])
+
 ret_df = pd.read_csv("estimated_data/crsp_data/crsp_monthly_index_returns.csv")
 
 D_df["date"] = pd.to_datetime(D_df["date"])
@@ -43,6 +52,8 @@ for y_var in ["vw_ret", "sp_ret"]:
         dict_to_append["se"] = [np.sqrt(np.diag(cov_hetero))[1]]
         
         df_results = df_results.append(pd.DataFrame(dict_to_append))
+        
+df_results
        
 ####################################################################################
 # Comparing D and probabilities aggregate series
@@ -59,7 +70,7 @@ prob_df = prob_df.rename({"D_pc1": "prob_pc1",
 prob_df["date"] = pd.to_datetime(prob_df["date"])
 all_df = pd.merge(prob_df, D_df, on = "date", how = "inner")
 
-all_df.set_index("date").plot()
+all_df.set_index("date").plot(figsize = (8,6))
 all_df.set_index("date").corr()
 
 ####################################################################################
@@ -98,11 +109,13 @@ for x in cutoff_list:
 #    print("%.4f, %.4f, %.4f, %.4f" % (x, results.params[1], results.HC1_se[1], results.rsquared))
     
 
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(figsize = (7,4))
 ax.errorbar(cutoff_list, coef_list, xerr = 0,
             yerr=[x*1.96 for x in se_list],
             fmt='-o')
 ax.axhline(0, color = "black", linewidth = 2, alpha = 0.7)
+ax.set_xlabel("x")
+ax.set_title("beta from $1\{ret_{m,t+1} < x\} = alpha + beta \cdot \overline{P_t^Q(ret_{i,t+1} < -0.2)} + u_{t+1}$")
     
 
 

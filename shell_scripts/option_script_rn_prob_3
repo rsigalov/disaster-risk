@@ -1,0 +1,219 @@
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_1
+echo 'Done with group 1/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_2
+echo 'Done with group 2/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_3
+echo 'Done with group 3/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_4
+echo 'Done with group 4/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_5
+echo 'Done with group 5/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_6
+echo 'Done with group 6/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_7
+echo 'Done with group 7/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_8
+echo 'Done with group 8/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_9
+echo 'Done with group 9/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_10
+echo 'Done with group 10/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_11
+echo 'Done with group 11/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_12
+echo 'Done with group 12/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_13
+echo 'Done with group 13/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_14
+echo 'Done with group 14/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_15
+echo 'Done with group 15/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_16
+echo 'Done with group 16/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_17
+echo 'Done with group 17/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_18
+echo 'Done with group 18/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_19
+echo 'Done with group 19/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_20
+echo 'Done with group 20/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_21
+echo 'Done with group 21/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_22
+echo 'Done with group 22/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_23
+echo 'Done with group 23/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_24
+echo 'Done with group 24/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_25
+echo 'Done with group 25/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_26
+echo 'Done with group 26/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_27
+echo 'Done with group 27/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_28
+echo 'Done with group 28/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_29
+echo 'Done with group 29/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_30
+echo 'Done with group 30/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_31
+echo 'Done with group 31/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_32
+echo 'Done with group 32/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_33
+echo 'Done with group 33/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_34
+echo 'Done with group 34/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_35
+echo 'Done with group 35/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_36
+echo 'Done with group 36/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_37
+echo 'Done with group 37/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_38
+echo 'Done with group 38/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_39
+echo 'Done with group 39/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_40
+echo 'Done with group 40/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_41
+echo 'Done with group 41/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_42
+echo 'Done with group 42/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_43
+echo 'Done with group 43/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_44
+echo 'Done with group 44/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_45
+echo 'Done with group 45/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_46
+echo 'Done with group 46/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_47
+echo 'Done with group 47/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_48
+echo 'Done with group 48/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_49
+echo 'Done with group 49/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_50
+echo 'Done with group 50/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_51
+echo 'Done with group 51/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_52
+echo 'Done with group 52/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_53
+echo 'Done with group 53/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_54
+echo 'Done with group 54/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_55
+echo 'Done with group 55/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_56
+echo 'Done with group 56/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_57
+echo 'Done with group 57/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_58
+echo 'Done with group 58/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_59
+echo 'Done with group 59/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_60
+echo 'Done with group 60/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_61
+echo 'Done with group 61/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_62
+echo 'Done with group 62/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_63
+echo 'Done with group 63/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_64
+echo 'Done with group 64/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_65
+echo 'Done with group 65/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_66
+echo 'Done with group 66/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_67
+echo 'Done with group 67/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_68
+echo 'Done with group 68/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_69
+echo 'Done with group 69/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_70
+echo 'Done with group 70/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_71
+echo 'Done with group 71/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_72
+echo 'Done with group 72/73' >> tracking_file.txt
+
+sudo julia -p 7 est_parameters_rn_prob.jl final_part3_73
+echo 'Done with group 73/73' >> tracking_file.txt
+

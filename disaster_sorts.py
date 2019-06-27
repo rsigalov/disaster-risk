@@ -179,7 +179,7 @@ disaster_ret_30_filter_df = pd.read_csv("estimated_data/merged_disaster_ret_data
 disaster_ret_60_filter_df = pd.read_csv("estimated_data/merged_disaster_ret_data/disaster_ret_60_filter.csv")
 disaster_ret_120_filter_df = pd.read_csv("estimated_data/merged_disaster_ret_data/disaster_ret_120_filter.csv")
 
-# Function to calculate sort based on a specified data frame and variable:
+# Function for calculating weighted average (to weight return by market value)
 def wavg(group, avg_name, weight_name):
     d = group[avg_name]
     w = group[weight_name]
@@ -187,7 +187,8 @@ def wavg(group, avg_name, weight_name):
         return (d * w).sum() / w.sum()
     except ZeroDivisionError:
         return np.nan
-    
+
+# Function to calculate sort based on a specified data frame and variable:    
 def estimate_disaster_sort_strategy(disaster_ret_df, var_to_sort, value_weighted = True):
     
     # Calculate outliers that we are not going to invest in:
@@ -401,7 +402,7 @@ plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regression
 
 
 ################################################################
-# Comparing with value weighted sort:
+# Comparing equal weighted and value weighted sorts
 ################################################################
 df_tmp = merge_and_filter_ind_disaster(30, "D_clamp", 15, 0)
 
@@ -549,16 +550,8 @@ ff_to_comp.cumsum().plot(figsize = (8, 6))
 plt.tight_layout()
 plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/images/disaster_sort_vw_compare_with_ff.pdf")
 
-# 4. Calculating raw summary statistic for sort and comparing them with FF portfolios:
-#(strategy_ret_df*12).iloc[:,[0,3,6]].mean()
-#(strategy_ret_df*12).iloc[:,[0,3,6]].std()
-#
-#(ff_df*12).mean()
-#(ff_df*12).std()
 
-
-
-# 5. Estimating regression of the return on each strategy on FF 5 factors:
+# 4. Estimating regression of the return on each strategy on FF 5 factors:
 reg_df = strategy_ret_df.copy()
 reg_df = pd.merge(reg_df, ff_df, left_index = True, right_index = True)
 

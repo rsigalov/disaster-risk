@@ -1,7 +1,5 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-This scripts performs sorts based on disaster measures:
+This scripts performs sorts based on disaster measure for individual companies
 """
 
 import numpy as np
@@ -278,8 +276,18 @@ log_ret.iloc[:,[6,7,8]].cumsum().plot(figsize = (7, 5))
 plt.tight_layout()
 plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/images/disaster_sort_vw_comp_4.pdf")    
 
+
+
+
+
+
 # 2. Calculating correlations between returns:
 strategy_ret_df.iloc[:,0:9].corr()
+
+
+
+
+
 
 # 3. Loading FF portfolios to compare with disaster sort portfolio
 ff_df = pd.read_csv("estimated_data/final_regression_dfs/ff_factors.csv")
@@ -304,8 +312,17 @@ ff_to_comp.cumsum().plot(figsize = (8, 6))
 plt.tight_layout()
 plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/images/disaster_sort_vw_compare_with_ff.pdf")
 
+ff_to_comp.loc[:, ["D_30", "RMW"]].cumsum().plot(figsize = (8, 6))
+plt.tight_layout()
+plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/images/disaster_sort_vw_compare_with_rmw.pdf")
 
-# 4. Estimating regression of the return on each strategy on FF 5 factors:
+# 4. Correlation with FF portfolios
+f = open("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/tables/disaster_sort_vw_corr_with_ff.tex", "w")
+f.write(ff_to_comp.corr().round(3).to_latex())
+f.close()
+
+
+# 5. Estimating regression of the return on each strategy on FF 5 factors:
 reg_df = strategy_ret_df.copy()
 reg_df = pd.merge(reg_df, ff_df, left_index = True, right_index = True)
 
@@ -327,10 +344,39 @@ f = open("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/t
 f.write(stargazer.render_latex())
 f.close()
 
+# Doing extended regression table where I do regressions of strategy return on 
+# (1) just the market, (2) FF 3 factors and (3) FF 5 factors.
+results_list = []
+for name in ["D_30", "p_20_30"]:
+    # to have the same name for all variables
+    reg_df_tmp = reg_df.rename({name: "ret"}, axis = 1) 
+    results_list.append(
+            smf.ols(formula = "ret ~ MKT", 
+                    data = reg_df_tmp*12).fit())
+    results_list.append(
+            smf.ols(formula = "ret ~ MKT + SMB + HML", 
+                    data = reg_df_tmp*12).fit())
+    results_list.append(
+            smf.ols(formula = "ret ~ MKT + SMB + HML + CMA + RMW", 
+                    data = reg_df_tmp*12).fit())
+    
+# Outputting short regression results:
+stargazer = Stargazer(results_list)
+stargazer.custom_columns(["D_30"]*3 + ["prob 20"]*3, [1]*6)
+stargazer.covariate_order(['Intercept', 'MKT', 'SMB', 'HML', 'RMW', 'CMA'])
+stargazer.show_degrees_of_freedom(False)
+f = open("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/tables/disaster_sort_reg_on_ff_2.tex", "w")
+f.write(stargazer.render_latex())
+f.close()
 
 
 
 
 
+
+
+
+# TO-DO: calculate turnover of the portfolio and compare it with turnover on
+# momentum portfolio to see it this alpha is viable.
 
 

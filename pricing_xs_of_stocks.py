@@ -9,7 +9,8 @@ import matplotlib as mpl
 
 # Loading estimated disaster series:
 disaster_df = pd.read_csv(
-        "estimated_data/disaster-risk-series/combined_disaster_df.csv")
+        "estimated_data/final_regression_dfs/disaster_sort_ret.csv")
+disaster_df = disaster_df.rename({"month_lead": "date"}, axis = 1)
 ret_df = pd.read_csv("estimated_data/crsp_data/crsp_monthly_returns.csv")
 
 # Dealing with dates:

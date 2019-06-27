@@ -152,18 +152,19 @@ print("\n--- Second Pass ---\n")
 print("\n--- Saving required data to estimate parameters ---\n")
 
 
-# Calculating near the money sigma:
+# Calculating near the money sigma, annualizing it by multiplying with SQRT(T)
+# of a particular option
 function calc_NTM_sigma(option::OptionData)
     NTM_dist = 0.05
     NTM_index = (option.strikes .<= option.spot*(1.0 + NTM_dist)) .&
                 (option.strikes .>= option.spot*(1.0 - NTM_dist))
     if sum(NTM_index) == 0
         if minimum(option.strikes) > option.spot
-            sigma_NTM = option.impl_vol[1]
+            sigma_NTM = option.impl_vol[1] * sqrt(option.T)
         elseif maximum(option.strikes) < option.spot
-            sigma_NTM = option.impl_vol[end]
+            sigma_NTM = option.impl_vol[end] * sqrt(option.T)
         else
-            sigma_NTM = option.impl_vol[option.strikes .<= option.spot][end]
+            sigma_NTM = option.impl_vol[option.strikes .<= option.spot][end] * sqrt(option.T)
         end
     else
         sigma_NTM = mean(option.impl_vol[NTM_index]) * sqrt(option.T)

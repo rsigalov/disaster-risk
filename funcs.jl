@@ -630,3 +630,61 @@ function estimate_parameters_index(spot, r, F, T, sigma_NTM, min_K, max_K, inter
 
 
 end
+
+
+# In the following function I change the magnitude of disasters specifically
+# for indices since there are only a few months where S&P 500 declined by more
+# than 10% and only one month where S&P declined by more than 15% -- Oct 2008
+function estimate_parameters_rn_prob(spot, r, F, T, sigma_NTM, min_K, max_K, interp_params)
+
+    ################################################################
+    # Risk-Neutral probability of a large decline
+    ################################################################
+    # 11. RN probability of two sigma drop:
+    if sigma_NTM < 0.5
+        rn_prob_2sigma = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+            max(0, spot*(1 - 2*sigma_NTM)), min_K, max_K,  false)[1]
+    else
+        rn_prob_2sigma = NaN
+    end
+
+    if sigma_NTM < 1
+        rn_prob_sigma = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+            max(0, spot*(1 - sigma_NTM)), min_K, max_K,  false)[1]
+    else
+        rn_prob_sigma = NaN
+    end
+
+    rn_prob_20 = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.2)), min_K, max_K, false)[1]
+    rn_prob_40 = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.4)), min_K, max_K, false)[1]
+    rn_prob_60 = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.6)), min_K, max_K, false)[1]
+    rn_prob_80 = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.8)), min_K, max_K, false)[1]
+
+    return rn_prob_sigma, rn_prob_2sigma, rn_prob_20, rn_prob_40,
+        rn_prob_60, rn_prob_80
+
+end
+
+function estimate_parameters_sigma_NTM(spot, r, F, T, sigma_NTM, min_K, max_K, interp_params)
+
+    if sigma_NTM < 0.5
+        rn_prob_2sigma = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+            max(0, spot*(1 - 2*sigma_NTM)), min_K, max_K, false)[1]
+    else
+        rn_prob_2sigma = NaN
+    end
+
+    if sigma_NTM < 1
+        rn_prob_sigma = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+            max(0, spot*(1 - sigma_NTM)), min_K, max_K, false)[1]
+    else
+        rn_prob_sigma = NaN
+    end
+
+    return rn_prob_sigma, rn_prob_2sigma
+
+end

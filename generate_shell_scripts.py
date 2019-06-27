@@ -146,4 +146,143 @@ f.write("\n")
 f.close()
 
 
+################################################################
+# Generating scripts for estimation of risk neutral probabilities
+# in a different way (without annualization or anything)
+################################################################
+
+secid_to_estimate = companies_to_estimate_1
+top_comps = len(secid_to_estimate)
+group_size = 30
+groups = int(top_comps/group_size)
+start_index = 1
+name_prefix = "final_part1"
+
+f = open("shell_scripts/option_script_rn_prob_1", "w")
+
+for i_group in range(groups):
+    f.write("sudo julia -p 7 est_parameters_rn_prob.jl " + name_prefix +"_" + str(i_group + start_index) + "\n")
+    f.write("echo 'Done with group " + str(i_group + 1) + "/" + str(groups) + "' >> tracking_file.txt\n")
+    f.write("\n")
+    
+f.close()
+
+secid_to_estimate = companies_to_estimate_1
+top_comps = len(secid_to_estimate)
+group_size = 30
+groups = int(top_comps/group_size)
+start_index = 1
+name_prefix = "final_part2"
+
+f = open("shell_scripts/option_script_rn_prob_2", "w")
+
+for i_group in range(groups):
+    f.write("sudo julia -p 7 est_parameters_rn_prob.jl " + name_prefix +"_" + str(i_group + start_index) + "\n")
+    f.write("echo 'Done with group " + str(i_group + 1) + "/" + str(groups) + "' >> tracking_file.txt\n")
+    f.write("\n")
+    
+f.close()
+
+secid_to_estimate = companies_to_estimate_1
+top_comps = len(secid_to_estimate)
+group_size = 30
+groups = int(top_comps/group_size)
+start_index = 1
+name_prefix = "final_part3"
+
+f = open("shell_scripts/option_script_rn_prob_3", "w")
+
+for i_group in range(groups):
+    f.write("sudo julia -p 7 est_parameters_rn_prob.jl " + name_prefix +"_" + str(i_group + start_index) + "\n")
+    f.write("echo 'Done with group " + str(i_group + 1) + "/" + str(groups) + "' >> tracking_file.txt\n")
+    f.write("\n")
+    
+f.close()
+
+
+
+
+################################################################
+# Generating scripts for downloading data and calculating
+# annualized sigma near the money (in the right way)
+################################################################
+
+secid_to_estimate = companies_to_estimate_1
+top_comps = len(secid_to_estimate)
+group_size = 30
+groups = int(top_comps/group_size)
+start_index = 1
+name_prefix = "final_part1"
+
+f = open("shell_scripts/option_script_sigma_NTM_1", "w")
+
+f.write("sudo python load_zcb.py\n")
+f.write("\n")
+
+for i_group in range(groups):
+    f.write("sudo python loading_data.py -s ")
+    f.write(",".join([str(x) for x in list(secid_to_estimate[group_size*i_group:(group_size + group_size*i_group)])]) + " ")
+    f.write(" -b 1996 -e 2017 -o " + name_prefix +"_" + str(i_group + start_index) + "\n")
+    f.write("sudo julia calc_sigma_MTN.jl " + name_prefix +"_" + str(i_group + start_index) + "\n")
+    f.write("sudo rm data/raw_data/opt_data_" + name_prefix +"_" + str(i_group + start_index) + ".csv\n")
+    f.write("sudo rm data/raw_data/dist_data_" + name_prefix +"_" + str(i_group + start_index) + ".csv\n")
+    f.write("echo 'Done with group " + str(i_group + 1) + "/" + str(groups) + "' >> tracking_file.txt\n")
+    f.write("\n")
+    
+f.close()
+
+secid_to_estimate = companies_to_estimate_2
+top_comps = len(secid_to_estimate)
+group_size = 30
+groups = int(top_comps/group_size)
+start_index = 1
+name_prefix = "final_part2"
+
+f = open("shell_scripts/option_script_sigma_NTM_2", "w")
+
+f.write("sudo python load_zcb.py\n")
+f.write("\n")
+
+for i_group in range(groups):
+    f.write("sudo python loading_data.py -s ")
+    f.write(",".join([str(x) for x in list(secid_to_estimate[group_size*i_group:(group_size + group_size*i_group)])]) + " ")
+    f.write(" -b 1996 -e 2017 -o " + name_prefix +"_" + str(i_group + start_index) + "\n")
+    f.write("sudo julia calc_sigma_MTN.jl " + name_prefix +"_" + str(i_group + start_index) + "\n")
+    f.write("sudo rm data/raw_data/opt_data_" + name_prefix +"_" + str(i_group + start_index) + ".csv\n")
+    f.write("sudo rm data/raw_data/dist_data_" + name_prefix +"_" + str(i_group + start_index) + ".csv\n")
+    f.write("echo 'Done with group " + str(i_group + 1) + "/" + str(groups) + "' >> tracking_file.txt\n")
+    f.write("\n")
+    
+f.close()
+
+
+secid_to_estimate = companies_to_estimate_3
+top_comps = len(secid_to_estimate)
+group_size = 30
+groups = int(top_comps/group_size)
+start_index = 1
+name_prefix = "final_part3"
+
+f = open("shell_scripts/option_script_sigma_NTM_3", "w")
+
+f.write("sudo python load_zcb.py\n")
+f.write("\n")
+
+for i_group in range(groups):
+    f.write("sudo python loading_data.py -s ")
+    f.write(",".join([str(x) for x in list(secid_to_estimate[group_size*i_group:(group_size + group_size*i_group)])]) + " ")
+    f.write(" -b 1996 -e 2017 -o " + name_prefix +"_" + str(i_group + start_index) + "\n")
+    f.write("sudo julia calc_sigma_MTN.jl " + name_prefix +"_" + str(i_group + start_index) + "\n")
+    f.write("sudo rm data/raw_data/opt_data_" + name_prefix +"_" + str(i_group + start_index) + ".csv\n")
+    f.write("sudo rm data/raw_data/dist_data_" + name_prefix +"_" + str(i_group + start_index) + ".csv\n")
+    f.write("echo 'Done with group " + str(i_group + 1) + "/" + str(groups) + "' >> tracking_file.txt\n")
+    f.write("\n")
+    
+f.close()
+
+
+
+
+
+
 

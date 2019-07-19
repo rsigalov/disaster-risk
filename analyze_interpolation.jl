@@ -156,16 +156,3 @@ sort!(df_to_plot, :date_mon)
 Plots.plot!(df_to_plot.date_mon, df_to_plot.num_firms,
     title = string("# of firms with at least X days where smile straddle d days"),
     label = ("X = 10, d = 45"), legend = :topleft)
-
-
-
-    101062,4855,3873
-    101328,4854,3806
-    101508,4810,4235
-    101375,4807,4109
-    101293,4755,2592
-    101535,4694,2840
-    101121,4655,3323
-    100972,4636,3534
-    101204,4581,3167
-    101322,4572,3486

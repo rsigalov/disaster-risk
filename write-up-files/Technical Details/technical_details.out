@@ -2,13 +2,10 @@
 \BOOKMARK [2][-]{subsection.1.1}{General Problem}{section.1}% 2
 \BOOKMARK [2][-]{subsection.1.2}{Zeliade \(2009\) method of reducing dimensionality}{section.1}% 3
 \BOOKMARK [2][-]{subsection.1.3}{Simplification of Berger, Dew-Becker and Giglio}{section.1}% 4
-\BOOKMARK [2][-]{subsection.1.4}{alternative title goes here}{section.1}% 5
-\BOOKMARK [1][-]{section.2}{Cubic Spline Volatility Smile Interpolation and Extrapolation}{}% 6
-\BOOKMARK [2][-]{subsection.2.1}{Clamped Cubic Spline System}{section.2}% 7
-\BOOKMARK [1][-]{section.3}{Generating Option Prices}{}% 8
-\BOOKMARK [2][-]{subsection.3.1}{IvyDB approach to implied volatility}{section.3}% 9
-\BOOKMARK [2][-]{subsection.3.2}{Continuously Compounded vs. Discrete Dividends}{section.3}% 10
-\BOOKMARK [1][-]{section.4}{Calculating Du and Kapadia Measure of Jump Risk}{}% 11
-\BOOKMARK [2][-]{subsection.4.1}{}{section.4}% 12
-\BOOKMARK [1][-]{section.5}{Appendix}{}% 13
-\BOOKMARK [2][-]{subsection.5.1}{Regression with linear constraints on parameters}{section.5}% 14
+\BOOKMARK [1][-]{section.2}{Generating Option Prices}{}% 5
+\BOOKMARK [2][-]{subsection.2.1}{IvyDB approach to implied volatility}{section.2}% 6
+\BOOKMARK [2][-]{subsection.2.2}{Continuously Compounded vs. Discrete Dividends}{section.2}% 7
+\BOOKMARK [1][-]{section.3}{Calculating Du and Kapadia Measure of Jump Risk}{}% 8
+\BOOKMARK [2][-]{subsection.3.1}{}{section.3}% 9
+\BOOKMARK [1][-]{section.4}{Appendix}{}% 10
+\BOOKMARK [2][-]{subsection.4.1}{Regression with linear constraints on parameters}{section.4}% 11

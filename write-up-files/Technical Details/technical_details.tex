@@ -51,7 +51,7 @@ where $k_i$ -- observed $\log(Strike_i/Forward_i)$ and $\sigma_i$ is the observe
 \begin{enumerate}
 	\item Divide the parameter $\theta$ into two parts $\theta_1 = (m,\sigma)$ and $\theta_2 = (\rho,a,b)$. Fix $(m,\sigma)$ and substitute $y_i = \frac{k_i - m}{\sigma}$ so that the minimization objective becomes
 	\[\sum_{i} \left[a + b\left(\rho \sigma y_i + \sigma\sqrt{y_i^2 + 1}\right) - \sigma_i^2\right]^2\]
-	\item Zeliade (2009) works with total variance $Tv$ rather than on variance $\sigma^2$ ({\color{red} unclear to me why exactly}). Denote total variance $\tilde{v} = Tv$, so that the SVI becomes 
+	\item Zeliade (2009) works with total variance $Tv$ rather than on variance $\sigma^2$. Denote total variance $\tilde{v} = Tv$, so that the SVI becomes 
 	\[v(k) = aT + bT\left(\rho (k-m) + \sqrt{(k-m)^2 + \sigma^2}\right)\]
 	and the minimization objective becomes
 	\[\sum_{i} \left[aT + b\rho \sigma T y_i + b \sigma T\sqrt{y_i^2 + 1} - \tilde{v}_i^2\right]^2\]
@@ -121,62 +121,62 @@ Berger, Dew-Becker and Giglio (?) assumes that $\rho = 0$. $\rho$ controls the a
 	
 \end{enumerate}
 
-Relaxing the constraint from $\tilde{a} \ge 0$ to $\tilde{a} \ge -c$ seems to improve the fit from visual inspection.
+\textit{Relaxing the constraint from $\tilde{a} \ge 0$ to $\tilde{a} \ge -c$ seems to improve the fit from visual inspection.}
 
-This is one of the methods that I use to fit the volatility smile. The main problem as it is also outline in Berger, Dew-Becker and Giglio (?) is that the minimization is very sensitive to starting values and hence they use grid search over $m \times \sigma = [-1,1] \times [0.00001, 10]$ to pick a starting value and then they use local derivative free minimization algorithm. I do the same in one of the approaches. In another approach, I use global optimization algorithm. These algorithms require the set to be bounded and I use the same bounds as in the grid search. I then compare both of these approaches by plotting fit of each.
+This is one of the methods that I use to fit the volatility smile. The main problem as it is also outline in Berger, Dew-Becker and Giglio (?) is that the minimization is very sensitive to starting values and hence they use grid search over $m \times \sigma = [-1,1] \times [0.00001, 10]$ to pick a starting value and then they use local derivative free minimization algorithm. Instead of using a grid search to pick a strating point for local minimization problem, I first run global algorithm (Dividing Rectangles Algorithm) that as the grid search requires specifiying the parameter space.
 
-\subsection[alternative title goes here]{Proceeding without assuming $\rho = 0$ or $\tilde{a} \ge 0$}
+% \subsection[alternative title goes here]{Proceeding without assuming $\rho = 0$ or $\tilde{a} \ge 0$}
 
-Zeliade (2009) doesn't assume $\rho = 0$ and they can still derive a simple objective. The reason is that they assume $\tilde{a} \ge 0$ in which case the constraint becomes linear. If we don't assume this, we are left with constraint $\tilde{a} \ge -c\sigma\sqrt{1-\rho^2}$ so that we can't use the same bounded linear regression approach. It seems that the only way to proceed is to perform factor out $a$ and $b$ out of optimization and perform the outer numerical optimization over $(m, \sigma, \rho)$. The issue is that we either need to add the third dimension to the grid search or perform global optimization over 3 variables. Grid search over 3 variables is quite costly. Global optimization also adds computational complexity but not to the same extent. Nevertheless, I use the two approaches in order to compare the fit and see if it is worthwhile to fit volatility smile in this way.
+% Zeliade (2009) doesn't assume $\rho = 0$ and they can still derive a simple objective. The reason is that they assume $\tilde{a} \ge 0$ in which case the constraint becomes linear. If we don't assume this, we are left with constraint $\tilde{a} \ge -c\sigma\sqrt{1-\rho^2}$ so that we can't use the same bounded linear regression approach. It seems that the only way to proceed is to perform factor out $a$ and $b$ out of optimization and perform the outer numerical optimization over $(m, \sigma, \rho)$. The issue is that we either need to add the third dimension to the grid search or perform global optimization over 3 variables. Grid search over 3 variables is quite costly. Global optimization also adds computational complexity but not to the same extent. Nevertheless, I use the two approaches in order to compare the fit and see if it is worthwhile to fit volatility smile in this way.
 
-For fixed $(m, \sigma, \rho)$ the minimization objective becomes
-\[\min_{a, b} \sum_i \left[a + b\left(\rho \sigma y_i + \sigma\sqrt{y_i^2 + 1}\right) - \sigma_i^2\right]^2 \text{ subject to }\]
-\[(a,b) \in \mathcal{D} = 
-\left\{\begin{aligned}
-	-b\sigma\sqrt{1-\rho^2} \le & a \le \max_i\{\sigma_i\} \\
-	0 \le &b \le \frac{4}{(1+|\rho|)T} \\
-\end{aligned}\right.\]
-that is very similar to the problem considered before. 
-
-
+% For fixed $(m, \sigma, \rho)$ the minimization objective becomes
+% \[\min_{a, b} \sum_i \left[a + b\left(\rho \sigma y_i + \sigma\sqrt{y_i^2 + 1}\right) - \sigma_i^2\right]^2 \text{ subject to }\]
+% \[(a,b) \in \mathcal{D} = 
+% \left\{\begin{aligned}
+% 	-b\sigma\sqrt{1-\rho^2} \le & a \le \max_i\{\sigma_i\} \\
+% 	0 \le &b \le \frac{4}{(1+|\rho|)T} \\
+% \end{aligned}\right.\]
+% that is very similar to the problem considered before. 
 
 
-\section{Cubic Spline Volatility Smile Interpolation and Extrapolation}
 
-The FED paper ({\color{red} Include citation}) suggests using cubic spline to interpolate and extrapolate implied volatilities. Cubic spline is defined as piecewise cubic polynomials that pass through all points (knots) and have continuous first and second derivatives. Estimation of these derivatives pins down to solving a system of linear equations. To complete the system we need to specify conditions of derivatives on the boundary knots. The FED paper sets the first derivative equal to zero at both the lowest and the highest maturities so that extrapolation beyond these points is linear and flat. This is called Clamped Cubic Spline.
 
-In deriving the system I followed the approach (\href{http://cis.poly.edu/~mleung/CS3734/s03/ch07/cubicSpline.pdf}{here}). Note that they have a couple of typos and they provide a system for different condition on the derivatives on boundary knots. I don't provide the full derivations, just the final system. 
+% \section{Cubic Spline Volatility Smile Interpolation and Extrapolation}
 
-\subsection{Clamped Cubic Spline System}
+% The FED paper ({\color{red} Include citation}) suggests using cubic spline to interpolate and extrapolate implied volatilities. Cubic spline is defined as piecewise cubic polynomials that pass through all points (knots) and have continuous first and second derivatives. Estimation of these derivatives pins down to solving a system of linear equations. To complete the system we need to specify conditions of derivatives on the boundary knots. The FED paper sets the first derivative equal to zero at both the lowest and the highest maturities so that extrapolation beyond these points is linear and flat. This is called Clamped Cubic Spline.
 
-We have a set of points $(t_1,y_1), \dots, (t_n, y_n)$, we will need $n - 1$ cubic polynomials with equations $S_i(x)$ to interpolate these points. Denote $z_i := S_{i}''(t_i)$. Then, we can show that $(z_1,\dots,z_n)$ is the solution to the system
-\[\scriptscriptstyle\begin{pmatrix}
-	2h_1 & h_1 & 0 & 0 & \dots & 0 & 0 & 0 \\
-	h_1 & 2(h_1 + h_2) & h_2 & 0 & \dots & 0 & 0 & 0 \\
-	0 & h_2 &  2(h_2 + h_3) & h_3 & \dots & 0 & 0 & 0 \\
-	\vdots & \vdots & \vdots & \ddots & \dots & \vdots & \vdots & \vdots \\
-	0 & 0 & 0 & 0 & \dots & h_{n-2} & 2(h_{n-2} + h_{n-1}) & h_{n-1} \\
-	0 & 0 & 0 & 0 & \dots & 0 & h_{n-1} & 2h_{n-1}
-\end{pmatrix}
-\begin{pmatrix}
-	z_1 \\ \vdots \\ z_n
-\end{pmatrix}\]
-\[\scriptscriptstyle=
-\begin{pmatrix}
-	\frac{6}{h_1}(y_2 - y_1) \\
-	\frac{6}{h_2}(y_3 - y_2) - \frac{6}{h_1}(y_2-y_1) \\
-	\frac{6}{h_3}(y_4 - y_3) - \frac{6}{h_2}(y_3-y_2) \\
-	\vdots \\
-	\frac{6}{h_{n-1}}(y_n - y_{n-1}) - \frac{6}{h_{n-2}}(y_{n-1}-y_{n-2}) \\
-	-\frac{6}{h_{n-1}}(y_n-y_{n-1})
-\end{pmatrix}\]
-where $h_{i} = t_{i+1} - t_i$. Then each polynomial is given by
-\[\begin{aligned}
-	& S_i(x) = A_i(x-t_i)^3 + B_i(x-t_i)^2 + C_i(x-t_i) + y_i \\
-	& A_i = \frac{z_{i+1} - z_i}{6h_i} \\
-	& B_i = \frac{z_i}{2} \\
-	& C_i = -\frac{z_ih_i}{3} - \frac{z_{i+1}h_i}{6} + \frac{y_{i+1}-y_i}{h_i}
-\end{aligned}\]
+% In deriving the system I followed the approach (\href{http://cis.poly.edu/~mleung/CS3734/s03/ch07/cubicSpline.pdf}{here}). Note that they have a couple of typos and they provide a system for different condition on the derivatives on boundary knots. I don't provide the full derivations, just the final system. 
+
+% \subsection{Clamped Cubic Spline System}
+
+% We have a set of points $(t_1,y_1), \dots, (t_n, y_n)$, we will need $n - 1$ cubic polynomials with equations $S_i(x)$ to interpolate these points. Denote $z_i := S_{i}''(t_i)$. Then, we can show that $(z_1,\dots,z_n)$ is the solution to the system
+% \[\scriptscriptstyle\begin{pmatrix}
+% 	2h_1 & h_1 & 0 & 0 & \dots & 0 & 0 & 0 \\
+% 	h_1 & 2(h_1 + h_2) & h_2 & 0 & \dots & 0 & 0 & 0 \\
+% 	0 & h_2 &  2(h_2 + h_3) & h_3 & \dots & 0 & 0 & 0 \\
+% 	\vdots & \vdots & \vdots & \ddots & \dots & \vdots & \vdots & \vdots \\
+% 	0 & 0 & 0 & 0 & \dots & h_{n-2} & 2(h_{n-2} + h_{n-1}) & h_{n-1} \\
+% 	0 & 0 & 0 & 0 & \dots & 0 & h_{n-1} & 2h_{n-1}
+% \end{pmatrix}
+% \begin{pmatrix}
+% 	z_1 \\ \vdots \\ z_n
+% \end{pmatrix}\]
+% \[\scriptscriptstyle=
+% \begin{pmatrix}
+% 	\frac{6}{h_1}(y_2 - y_1) \\
+% 	\frac{6}{h_2}(y_3 - y_2) - \frac{6}{h_1}(y_2-y_1) \\
+% 	\frac{6}{h_3}(y_4 - y_3) - \frac{6}{h_2}(y_3-y_2) \\
+% 	\vdots \\
+% 	\frac{6}{h_{n-1}}(y_n - y_{n-1}) - \frac{6}{h_{n-2}}(y_{n-1}-y_{n-2}) \\
+% 	-\frac{6}{h_{n-1}}(y_n-y_{n-1})
+% \end{pmatrix}\]
+% where $h_{i} = t_{i+1} - t_i$. Then each polynomial is given by
+% \[\begin{aligned}
+% 	& S_i(x) = A_i(x-t_i)^3 + B_i(x-t_i)^2 + C_i(x-t_i) + y_i \\
+% 	& A_i = \frac{z_{i+1} - z_i}{6h_i} \\
+% 	& B_i = \frac{z_i}{2} \\
+% 	& C_i = -\frac{z_ih_i}{3} - \frac{z_{i+1}h_i}{6} + \frac{y_{i+1}-y_i}{h_i}
+% \end{aligned}\]
 
 
 
@@ -184,7 +184,7 @@ where $h_{i} = t_{i+1} - t_i$. Then each polynomial is given by
 
 \subsection{IvyDB approach to implied volatility}
 
-In order to calculate option price for given strike and a given volatility we need to know the Zero Coupon Rate for the maturity of the option and the type of dividends. The approach for calculating option prices for indices and individual equities differs (I took details from IvyDB reference on WRDS (\href{https://wrds-www.wharton.upenn.edu/documents/755/IvyDB_US_Reference_Manual.pdf}{link})):
+In order to calculate option price for given strike and a given volatility we need to know the Zero Coupon Rate for the maturity of the option and the type of dividends. The approach for calculating option prices for indices and individual equities differs (Details are contained in IvyDB reference on WRDS (\href{https://wrds-www.wharton.upenn.edu/documents/755/IvyDB_US_Reference_Manual.pdf}{link})):
 \begin{enumerate}
 	\item For indices IvyDB assumes that dividends are continuously compounded. They use a structural regression that utilizes put-call parity to get dividends yield. Table OPTIONM.IDXDVD provides such estimate for the dividend yield. 
 	\item For equities IvyDB uses either actual ex-dividend date if dividends were announced or it uses projected date using the frequency of dividends. Information about historical dividends and other distributions is provided in table OPTIONM.DISTRD

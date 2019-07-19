@@ -202,8 +202,8 @@ def estimate_disaster_sort_strategy(disaster_ret_df, var_to_sort, value_weighted
         strategy_ret = strategy_ret.rename("strategy_ret")
         
     else:
-        disaster_ret_quants_df["ret_strategy"] = disaster_ret_quants_df["ret"] * disaster_ret_quants_df["action"]
-        strategy_ret = disaster_ret_quants_df.groupby("month_lead")["ret_strategy"].mean()
+        disaster_ret_quants_df["strategy_ret"] = disaster_ret_quants_df["ret"] * disaster_ret_quants_df["action"]
+        strategy_ret = disaster_ret_quants_df.groupby("month_lead")["strategy_ret"].mean()
         
     
     return strategy_ret
@@ -217,6 +217,16 @@ disaster_ret_30_df = merge_and_filter_ind_disaster(30, "D_clamp", 15, 0)
 disaster_ret_60_df = merge_and_filter_ind_disaster(60, "D_clamp", 15, 0)
 disaster_ret_120_df = merge_and_filter_ind_disaster(120, "D_clamp", 15, 0)
 
+# Saving the merged returns-disaster risk data:
+disaster_ret_30_df = disaster_ret_30_df.drop("date", axis = 1)
+disaster_ret_60_df = disaster_ret_60_df.drop("date", axis = 1)
+disaster_ret_120_df = disaster_ret_120_df.drop("date", axis = 1)
+
+disaster_ret_30_df.to_csv("estimated_data/merged_disaster_ret_data/disaster_ret_30.csv", index = False)
+disaster_ret_60_df.to_csv("estimated_data/merged_disaster_ret_data/disaster_ret_60.csv", index = False)
+disaster_ret_120_df.to_csv("estimated_data/merged_disaster_ret_data/disaster_ret_120.csv", index = False)
+
+# Calculating the returns on the trading strategy:
 strategy_ret_30_D_clamp = estimate_disaster_sort_strategy(disaster_ret_30_df, "D_clamp")
 strategy_ret_60_D_clamp = estimate_disaster_sort_strategy(disaster_ret_60_df, "D_clamp")
 strategy_ret_120_D_clamp = estimate_disaster_sort_strategy(disaster_ret_120_df, "D_clamp")
@@ -284,7 +294,8 @@ plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regression
 # 2. Calculating correlations between returns:
 strategy_ret_df.iloc[:,0:9].corr()
 
-
+(strategy_ret_df.loc[:, "D_30"] + 1).cumprod().plot()
+(ff_df[ff_df.index >= "1996-01-01"].loc[:, "MKT"] + 1).cumprod().plot()
 
 
 
@@ -369,6 +380,70 @@ f = open("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/t
 f.write(stargazer.render_latex())
 f.close()
 
+####################################################################
+# Generating merged file with disaster measure, return, disaster
+# sorted portfolio assignment for each permno-month
+####################################################################
+disaster_ret_30_df = merge_and_filter_ind_disaster(30, "D_clamp", 15, 0)
+disaster_ret_60_df = merge_and_filter_ind_disaster(60, "D_clamp", 15, 0)
+disaster_ret_120_df = merge_and_filter_ind_disaster(120, "D_clamp", 15, 0)
+
+
+
+
+
+####################################################################
+# Comparing equal vs. value weighted sorts
+####################################################################
+
+# First, plotting the figures side-by-side
+disaster_ret_df = pd.read_csv("estimated_data/merged_disaster_ret_data/disaster_ret_30.csv")
+
+port_return_ew = estimate_disaster_sort_strategy(disaster_ret_df, "rn_prob_20mon", value_weighted = False)
+port_return_vw = estimate_disaster_sort_strategy(disaster_ret_df, "rn_prob_20mon", value_weighted = True)
+
+port_return_ew_vw_comp = pd.merge(
+        port_return_ew.rename("EW"), port_return_vw.rename("VW"), 
+        left_index = True, right_index = True)
+(port_return_ew_vw_comp+1).cumprod().plot()
+
+# Next, looking at companies in more details
+var_to_sort = "rn_prob_20mon"
+
+quant_low_out = disaster_ret_df.groupby("month_lead")[var_to_sort].quantile(0.01).rename("quant_low_out")
+quant_high_out = disaster_ret_df.groupby("month_lead")[var_to_sort].quantile(0.99).rename("quant_high_out")
+
+quant_low = disaster_ret_df.groupby("month_lead")[var_to_sort].quantile(0.3).rename("quant_low")
+quant_high = disaster_ret_df.groupby("month_lead")[var_to_sort].quantile(0.7).rename("quant_high")
+
+# Plotting quantiles:
+quants_compare = pd.merge(
+        quant_low, quant_high, left_index = True, right_index = True)
+quants_compare.plot()
+
+
+# 2. Merging on original dataframe and assigning buckets:
+disaster_ret_quants_df = disaster_ret_df[["month_lead", var_to_sort, "ret", "MV"]]
+disaster_ret_quants_df = pd.merge(disaster_ret_quants_df, quant_low, on = "month_lead", how = "inner")
+disaster_ret_quants_df = pd.merge(disaster_ret_quants_df, quant_high, on = "month_lead", how = "inner")
+disaster_ret_quants_df = pd.merge(disaster_ret_quants_df, quant_low_out, on = "month_lead", how = "inner")
+disaster_ret_quants_df = pd.merge(disaster_ret_quants_df, quant_high_out, on = "month_lead", how = "inner")
+
+disaster_ret_quants_df["action"] = 0
+disaster_ret_quants_df.loc[(disaster_ret_quants_df[var_to_sort] < disaster_ret_quants_df["quant_low"]) & 
+                           (disaster_ret_quants_df[var_to_sort] > disaster_ret_quants_df["quant_low_out"]),
+           "action"] = -1
+disaster_ret_quants_df.loc[(disaster_ret_quants_df[var_to_sort] > disaster_ret_quants_df["quant_high"]) & 
+                           (disaster_ret_quants_df[var_to_sort] < disaster_ret_quants_df["quant_high_out"]),
+           "action"] = 1
+
+# Plotting the distribution of market value for long and short companies
+# at different points in time:
+month_to_lot = "2010-01-31"
+df_to_plot = disaster_ret_quants_df[
+        disaster_ret_quants_df["month_lead"] == month_to_lot]
+
+plt.hist(df_to_plot[df_to_plot["action"] == 1]["MV"])
 
 
 
@@ -376,7 +451,25 @@ f.close()
 
 
 
-# TO-DO: calculate turnover of the portfolio and compare it with turnover on
-# momentum portfolio to see it this alpha is viable.
+# Doing weighting:
+if value_weighted:
+    ret_intermediate = disaster_ret_quants_df \
+        .groupby(["month_lead", "action"]) \
+        .apply(wavg, "ret", "MV") \
+        .reset_index() \
+        .rename({0: "ret"}, axis = 1)
+    
+    port_pivot = pd.pivot_table(
+            ret_intermediate, values = "ret", index = ["month_lead"], 
+            columns=["action"], aggfunc = np.sum)
+    
+    strategy_ret = port_pivot.iloc[:, 2] - port_pivot.iloc[:, 0]
+    strategy_ret = strategy_ret.rename("strategy_ret")
+    
+else:
+    disaster_ret_quants_df["strategy_ret"] = disaster_ret_quants_df["ret"] * disaster_ret_quants_df["action"]
+    strategy_ret = disaster_ret_quants_df.groupby("month_lead")["strategy_ret"].mean()
+
+
 
 

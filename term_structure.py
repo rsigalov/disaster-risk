@@ -242,11 +242,22 @@ plt.show()
 
 
 ################################################################
+# Writing a function that calculates principal components in 
+# differen ways.
+#   1. PC based on unbalanced panel where observations are
+#      reweighted to make the weights sum up to 1 at each date
+#   2. PC based on largely balanced panel, where missing
+#      variables are filled with the time series mean of a
+#      particular observation.
+
+
+################################################################
 # Writing a function that takes in a data frame with observations
 # normalizes them to have mean zero and unit standard deviation
 # and runs a regression on factors supplied by the user. Before
 # running the regression the function orthgonalizes the factors
-def estimate_regs_on_factor(df, factor):        
+def estimate_regs_on_factor(df, factors):      
+    num_factors = factors.shape[1]
     # Normalizing the variables in the data frame:
     for i_col in range(df.shape[1]):
         x = np.array(df.iloc[:,i_col])
@@ -259,36 +270,60 @@ def estimate_regs_on_factor(df, factor):
 
     reg_df = pd.merge(df, factors, on = ["date_mon"], how = "left") 
     
-    results_list = []
+    # Sequentially estimating regressions on more and more factors:
+    # (1) on factor 1, (2) on factors 1 and 2, (3) on factors 1,2
+    # and 3, and so on...
+    results_list = [] # list with regression results
+    index_list = [] # list with indices of form (secid, m, num_factors)
     for i_col in range(df.shape[1]):
-        Y = df.iloc[:,i_col].rename("Y")
-        X = factor.rename("X")
-        reg_df = pd.merge(Y, X, left_index = True, right_index = True)
-        results_list.append(smf.ols(formula = "Y ~ X", data = reg_df).fit())
-    
+        for i_factors in range(num_factors):
+            index_list.append(df.columns[i_col] + (i_factors+1, ))
+            Y = df.iloc[:,i_col].rename("Y")
+            X = factors.iloc[:, range(i_factors + 1)]      
+            # Merging left-hand variable on factors to have the same 
+            # time periods
+            reg_df = pd.merge(Y, X, left_index = True, right_index = True)
+            Y = np.array(reg_df.iloc[:,0])
+            X = np.array(reg_df.iloc[:, range(1, i_factors+2,1)])
+            X = sm.add_constant(X)
+            res = sm.OLS(Y, X, missing = "drop").fit()
+            results_list.append(res)
+
     # Aggregating variance into one measure. First Calculating the
     # sum of all squared deviations from the mean. Since we normalized
     # the mean of each series to be zero, this is just the sum of
     # squares of all the columns. Next calculate the sum of squared
     # residuals in a regression without a constant. Next, compare the
     # improvement in a model with one factor.
-    TSS = np.nansum(np.power(df_pivot_norm, 2))
-    RSS = np.sum([np.sum([x**2 for x in y.resid]) for y in results_list])
-    R2_agg = (TSS - RSS)/TSS
+    # 
+    # Going through regression with different number of factors and
+    # and calculating aggregate R squared for each of them. This will
+    # give a sense of how much each factor contributes to explaining 
+    # the variability in the data        
+    TSS = np.nansum(np.power(df, 2)) # TSS - same for all regressions
+    R2_agg_list = []
+    for i_factors in range(num_factors):
+        reg_list_factor = [results_list[x] for x in range(len(results_list)) if (index_list[x][2] - 1 == i_factors)]
+        RSS = np.sum([np.sum([x**2 for x in y.resid]) for y in reg_list_factor])
+        R2_agg_list.append((TSS - RSS)/TSS)
     
     # Returing statistics on regressions in a dataframe:    
     res_df_to_return = pd.DataFrame({
-            "secid": [x[1] for x in df.columns],
-            "m": [x[0] for x in df.columns],
-            "pc_num": i_pc + 1,
-            "alpha": [x.params[0] for x in res_pc],
-            "alpha_se": [x.bse[0] for x in res_pc],
-            "beta": [x.params[1] for x in res_pc],
-            "beta_se": [x.bse[1] for x in res_pc],
-            "R2": [x.rsquared for x in res_pc],
-            "N": [x.nobs for x in res_pc]})
+            "m": [x[0] for x in index_list],
+            "secid": [x[1] for x in index_list],
+            "pc_num": [x[2] for x in index_list],
+            "R2": [x.rsquared for x in results_list],
+            "N": [x.nobs for x in results_list]})
 
-    return R2_agg, res_df_to_return
+    return R2_agg_list, res_df_to_return
+
+
+R2_agg_list, reg_factors_df = estimate_regs_on_factor(df_pivot, pc_df)
+R2_agg_list, reg_factors_df = estimate_regs_on_factor(df_pivot, lsc_factors_der)
+R2_agg_list, reg_factors_df = estimate_regs_on_factor(df_pivot, pc_post_df)
+
+
+
 
 
 
@@ -375,9 +410,6 @@ plt.setp(axes, xticks = [1,2,3,4,5,6],
          xticklabels = [30, 60, 90, 120, 150, 180])
 plt.show()
 
-
-R2_pseudo_pc1, reg_res_pseudo_pc1 = estimate_regs_on_factor(df_pivot, pc_df.iloc[:, 0])
-R2_post_pc1, reg_res_post_pc1 = estimate_regs_on_factor(df_pivot, pc_post_df.iloc[:, 0])
 
 
 

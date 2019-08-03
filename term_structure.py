@@ -163,38 +163,13 @@ df_pivot = pd.pivot_table(
         int_d_mon_mat[int_d_mon_mat.secid.isin(secid_list)], 
         index = "date_mon", columns = ["m", "secid"], values = VARIABLE)
 
-# Calculating the first eigenvector of the correlation matrix. This
-# vector is weights on different.
-#
-# In order to construct the principal components we need to carefully
-# reweight the data so that weights sum up to unity for each date:
-# Matrix with dummies if the observation is present:
-def construct_pc(df, pc_num):
-    corr_df = df.corr()
-    eigs_tuple = eigs(np.array(corr_df.fillna(0)),pc_num)
-    w_raw = eigs_tuple[1][:,pc_num - 1].astype(float).flatten()
-    w_raw = w_raw/np.sum(w_raw)
-    
-    x = np.array(df.fillna(0))
-    d = np.where(np.array(~df_pivot.isnull()), 1, 0)
-    w = np.tile(w_raw.reshape((1,-1)), (total_number_of_months,1))
-    dw = d * w
-    dw_sum = np.sum(dw, axis = 1).reshape((-1,1))
-    dw_sum = np.tile(dw_sum, (1, x.shape[1]))
-    w = w / dw_sum
-    pc = np.sum(x * w, axis = 1)  
-    pc_df = pd.DataFrame({"PC" + str(pc_num):pc}, index = df.index)
-    return w_raw, pc_df
 
-w1, pc1 = construct_pc(df_pivot, 1)
-w2, pc2 = construct_pc(df_pivot, 2)
-w3, pc3 = construct_pc(df_pivot, 3)
+
+w1, pc1 = construct_pc_unbalanced(df_pivot, 1)
+w2, pc2 = construct_pc_unbalanced(df_pivot, 2)
+w3, pc3 = construct_pc_unbalanced(df_pivot, 3)
 pc_df = pd.merge(pc1, pc2, left_index = True, right_index = True)
 pc_df = pd.merge(pc_df, pc3, left_index = True, right_index = True)
-
-# Orthogonalizing PCs to one another:
-pc_df["PC2"] = smf.ols("PC2 ~ PC1", data = pc_df).fit().resid
-pc_df["PC3"] = smf.ols("PC3 ~ PC1 + PC2", data = pc_df).fit().resid
 
 # Calculating table with summary statistics on loadings for different
 # maturities. The idea is to show that the first principal component
@@ -226,8 +201,6 @@ w3_mat_sum_stat = (w3_mat_split*1000).describe().round(3).loc[["count", "mean", 
 print(w3_mat_sum_stat)
 print("")
 
-def gen_sum_stats
-
 # Looking at box plot
 fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(13.5, 4))
 r = axes[0].boxplot([np.array(w1_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
@@ -241,15 +214,111 @@ plt.setp(axes, xticks = [1,2,3,4,5,6],
 plt.show()
 
 
-################################################################
-# Writing a function that calculates principal components in 
-# differen ways.
-#   1. PC based on unbalanced panel where observations are
-#      reweighted to make the weights sum up to 1 at each date
-#   2. PC based on largely balanced panel, where missing
-#      variables are filled with the time series mean of a
-#      particular observation.
+# In order to construct the principal components we need to carefully
+# reweight the data so that weights sum up to unity for each date:
+# Matrix with dummies if the observation is present:
+def construct_pc_unbalanced(df_pivot, pc_num):
+    '''
+    Gets as input a pivoted dataframe where each column is a time
+    series observation and each row is date
+    '''
+    corr_df = df_pivot.corr()
+    eigs_tuple = eigs(np.array(corr_df.fillna(0)),pc_num)
+    w_raw = eigs_tuple[1][:,pc_num - 1].astype(float).flatten()
+    w_raw = w_raw/np.sum(w_raw)
+    
+    x = np.array(df_pivot.fillna(0))
+    d = np.where(np.array(~df_pivot.isnull()), 1, 0)
+    w = np.tile(w_raw.reshape((1,-1)), (df_pivot.shape[0], 1))
+    dw = d * w
+    dw_sum = np.sum(dw, axis = 1).reshape((-1,1))
+    dw_sum = np.tile(dw_sum, (1, x.shape[1]))
+    w = w / dw_sum
+    pc = np.sum(x * w, axis = 1)  
+    
+    w_df = pd.DataFrame({"W" + str(pc_num):w_raw}, index = df_pivot.columns)
+    pc_df = pd.DataFrame({"PC" + str(pc_num):pc}, index = df_pivot.index)
+    return w_df, pc_df
 
+
+def construct_pcs(df, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5):
+    '''
+    Function that calculates principal components in differen ways.
+      1. PC based on unbalanced panel where observations are
+         reweighted to make the weights sum up to 1 at each date
+      2. PC based on largely balanced panel, where missing
+         variables are filled with the time series mean of a
+         particular observation.
+         
+    Takes as inputs:
+        
+        df - 
+             
+        method - balanced vs. unbalanced method
+
+        min_share_obs - minimum share of observations needed to
+             be included in PCA
+    '''
+    
+    # First to look at the number of firms that we have let's 
+    # calculate the share of total months that the firm is present
+    # in the sample:
+    total_number_of_months = len(np.unique(df["date_mon"]))
+    secid_share_months = df[df.m == 30].groupby("secid")["date_mon"].count().sort_values(ascending = False)/total_number_of_months
+    
+    secid_list = list(secid_share_months.index[secid_share_months >= min_share_obs])
+    
+    # Calculating correlation matrix between all these firms:
+    df_pivot = pd.pivot_table(
+            df[df.secid.isin(secid_list)], 
+            index = "date_mon", columns = ["m", "secid"], values = VARIABLE)
+    
+    print(df_pivot.shape)
+    
+    if method == "unbalanced":
+        pc_list = [] 
+        w_list = []
+        for i in range(1, num_pcs + 1,1):
+            w_i, pc_i = construct_pc_unbalanced(df_pivot, i)
+            pc_list.append(pc_i)
+            w_list.append(w_i)
+            
+        # Constructing dataframes with weights and principal components:
+        pc_df = reduce(lambda df1, df2: 
+            pd.merge(df1,df2,left_index = True, right_index = True), pc_list)
+        w_df = reduce(lambda df1, df2: 
+            pd.merge(df1,df2,left_index = True, right_index = True), w_list)    
+            
+        return w_df, pc_df
+    elif method == "balanced_fill":
+        # First, filling missing values with time series averages
+        for i_col in range(len(df_pivot.columns)):
+            x = np.array(df_pivot.iloc[:,i_col])
+            mean_x = np.nanmean(x)
+            df_pivot.iloc[:, i_col].loc[df_pivot.iloc[:,i_col].isnull()] = mean_x
+            
+        corr_df = np.corrcoef(np.array(df_pivot).T)
+        eigenvalue_decompos = eigs(np.array(corr_df), corr_df.shape[0] + 1)
+        all_eigs = eigenvalue_decompos[0].astype(float)
+        exp_var = all_eigs/np.sum(all_eigs)
+        w = eigenvalue_decompos[1].astype(float)[:, range(num_pcs)]
+        w = w/np.tile(np.sum(w, axis = 0).reshape((-1,num_pcs)), (w.shape[0], 1))
+        pc = (np.array(df_pivot) @ w)
+        
+        pc_df = pd.DataFrame(pc_post, index = df_pivot.index, columns = ["PC" + str(i+1) for i in range(num_pcs)])
+        w_df = pd.DataFrame(w, index = df_pivot.columns)
+        
+        return w_df, pc_df, exp_var[range(num_pcs)]
+    else:
+        raise ValueError("method can be 'unbalanced' or 'balanced_fill'")
+                
+
+w_df, pc_df = construct_pcs(
+        int_d_mon_mat, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5)
+
+w_df, pc_df, exp_var = construct_pcs(
+        int_d_mon_mat[int_d_mon_mat.date_mon >= "2003-01-01"], 
+        num_pcs = 3, method = "balanced_fill", min_share_obs = 0.8)
 
 ################################################################
 # Writing a function that takes in a data frame with observations
@@ -323,7 +392,21 @@ R2_agg_list, reg_factors_df = estimate_regs_on_factor(df_pivot, lsc_factors_der)
 R2_agg_list, reg_factors_df = estimate_regs_on_factor(df_pivot, pc_post_df)
 
 
-
+def pc_weights_sum_stats(w, path_to_write = None):
+    '''
+    The input should be a dataframe with multiindex where the first level
+    is maturity (e.g. 30 or 120) and second level is secid.
+    
+    If path_to_write is not None, then the latex table will be constructed
+    and saved at a specified path
+    '''
+    
+    # Looping through different principal component
+    
+    # Looping through different matrities:
+    for m in w_df.index.levels[0]:
+        
+    
 
 
 

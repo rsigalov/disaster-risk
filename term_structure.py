@@ -42,80 +42,23 @@ VARIABLE = "D_clamp"
 
 
 
-################################################################
-# Loading data on different maturity interpolated D
-################################################################
-int_d_columns = ["secid", "date"] + [VARIABLE]
-int_d = pd.DataFrame(columns = int_d_columns)
+    
 
-for days in [30, 60, 90, 120, 150, 180]:
-    print(days)
-    int_d_tmp = pd.read_csv("estimated_data/interpolated_D/int_ind_disaster_days_" + str(days) + ".csv")
-    int_d_tmp = int_d_tmp[int_d_columns]
-    int_d_tmp["m"] = days
-    int_d = int_d.append(int_d_tmp)
-
-################################################################
-# Calculating level factor as taking the cross section average 
-# across all companies and all maturities at a given date. 
-# (Need to make sure to use companies for which all maturities 
-# exist).
-################################################################
-int_d_var = int_d[["secid","date", "m", VARIABLE]]
-int_d_var = int_d_var[~int_d_var[VARIABLE].isnull()]
-
-# Pivoting table to only leave observations with full term structure present:
-pivot_mat = pd.pivot_table(int_d_var, index = ["secid", "date"], columns = "m", values = VARIABLE)
-pivot_mat = pivot_mat.dropna().reset_index()
-
-# Leaving only (secid, date) with the full term structure, got
-# these on the previous step
-int_d_var = pd.merge(pivot_mat[["secid", "date"]], int_d_var, 
-                     on = ["secid", "date"], how = "left")
-
-
-################################################################
-# Averaging within a month for each company and calculating number 
-# of days with observations. Later going to filter by the number 
-# of observations in a month, e.g. if the secid has more than 5 
-# observations in a given month we include it in the
-# sample and use it for calculations later on
-################################################################
-def mean_with_truncation(x):
-    return np.mean(x[(x <= np.quantile(x, 0.99)) & (x >= np.quantile(x, 0.01))])
-
-pivot_mat["date"] = pd.to_datetime(pivot_mat["date"])
-pivot_mat["date_mon"] = pivot_mat["date"] + pd.offsets.MonthEnd(0)
-
-# Counting number of full observations for each (secid, month).
-mean_cnt_df = pivot_mat.groupby(["secid", "date_mon"])["date"].count().reset_index()
-mean_cnt_df = mean_cnt_df.rename({"date": "cnt"}, axis = 1)
-
-# Filtering by the minimum number of observations:
-mean_cnt_df = mean_cnt_df[mean_cnt_df.cnt >= MIN_OBS_PER_MONTH]
-num_secids_per_month = mean_cnt_df.reset_index().groupby("date_mon")["secid"].count()
-
-# Merging this back to dataframe with individual disaster series:
-int_d_var["date"] = pd.to_datetime(int_d_var["date"])
-int_d_var["date_mon"] = int_d_var["date"] + pd.offsets.MonthEnd(0)
-int_d_var = pd.merge(mean_cnt_df, int_d_var, on = ["secid", "date_mon"], how = "left")
-
-# Calculating the level factor. First average the measure for each (secid, month).
-# Next, average with truncation at 1% level across companies within each month.
-level_factor = int_d_var.groupby(["secid", "date_mon"])[VARIABLE] \
-                        .mean()\
-                        .reset_index() \
-                        .groupby("date_mon")[VARIABLE] \
-                        .apply(mean_with_truncation) \
-                        .rename("level_factor")
-                        
-# Averaging within each (secid, month, maturity):
-int_d_mon_mat = int_d_var.groupby(["secid", "date_mon", "m"])[VARIABLE].mean().reset_index()
 
 
 ################################################################
 # Trying to calculate slope and curvature factors
 ################################################################
+# Separately pivoting the data
+def pivot_data_min_share(df, min_share_obs):
+    total_number_of_months = len(np.unique(df["date_mon"]))
+    secid_share_months = df[df.m == 30].groupby("secid")["date_mon"].count().sort_values(ascending = False)/total_number_of_months
+    secid_list = list(secid_share_months.index[secid_share_months >= min_share_obs])
+    df_pivot = pd.pivot_table(
+        df[df.secid.isin(secid_list)], 
+        index = "date_mon", columns = ["m", "secid"], values = VARIABLE)
+    return df_pivot
+
 # Estimating level as mean across term structure (TS)
 #            slope as mean slope across TS
 #            curvature as rate of change of slope across TS
@@ -142,7 +85,23 @@ def construct_lsc_factors(df):
     for i in range(3):
         df_month_der.iloc[:,i] = df_month_der.iloc[:,i]/np.std(df_month_der.iloc[:,i])
         
-lsc_factors = construct_lsc_factors(int_d_var)
+    return df_month_der
+        
+# This function in contrast constructs LSC factors based on average monthly 
+# term structure for each (secid, month) as opposed to daily term structures.
+def construct_lsc_factors_monthly(df):
+    df_der = df.groupby(["secid", "date_mon"]).apply(lsc_from_term_structure).apply(pd.Series)
+    df_der.columns = ["level", "slope", "curve"]
+    df_der = df_der.reset_index()
+    
+    # Calculating average across secids for each month
+    df_month_der = df_der.groupby("date_mon")["level", "slope", "curve"].apply(mean_with_truncation).apply(pd.Series)
+    
+    # Standardizing the factors:
+    for i in range(3):
+        df_month_der.iloc[:,i] = df_month_der.iloc[:,i]/np.std(df_month_der.iloc[:,i])
+        
+    return df_month_der
     
 # In order to construct the principal components we need to carefully
 # reweight the data so that weights sum up to unity for each date:
@@ -171,8 +130,7 @@ def construct_pc_unbalanced(df_pivot, pc_num):
     return w_df, pc_df
 
 
-def construct_pcs(df, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5,
-                  return_df_pivot = False):
+def construct_pcs(df_pivot, num_pcs = 3, method = "unbalanced"):
     '''
     Function that calculates principal components in differen ways.
       1. PC based on unbalanced panel where observations are
@@ -183,28 +141,13 @@ def construct_pcs(df, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5,
          
     Takes as inputs:
         
-        df - 
+        df_pivot - 
              
         method - balanced vs. unbalanced method
 
         min_share_obs - minimum share of observations needed to
              be included in PCA
-    '''
-    
-    # First to look at the number of firms that we have let's 
-    # calculate the share of total months that the firm is present
-    # in the sample:
-    total_number_of_months = len(np.unique(df["date_mon"]))
-    secid_share_months = df[df.m == 30].groupby("secid")["date_mon"].count().sort_values(ascending = False)/total_number_of_months
-    
-    secid_list = list(secid_share_months.index[secid_share_months >= min_share_obs])
-    
-    # Calculating correlation matrix between all these firms:
-    df_pivot = pd.pivot_table(
-            df[df.secid.isin(secid_list)], 
-            index = "date_mon", columns = ["m", "secid"], values = VARIABLE)
-    
-    print(df_pivot.shape)
+    '''    
     
     if method == "unbalanced":
         pc_list = [] 
@@ -220,10 +163,7 @@ def construct_pcs(df, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5,
         w_df = reduce(lambda df1, df2: 
             pd.merge(df1,df2,left_index = True, right_index = True), w_list)    
             
-        if return_df_pivot:
-            return w_df, pc_df, df_pivot
-        else:
-            return w_df, pc_df
+        return w_df, pc_df
         
     elif method == "balanced_fill":
         # First, filling missing values with time series averages
@@ -243,10 +183,8 @@ def construct_pcs(df, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5,
         pc_df = pd.DataFrame(pc_post, index = df_pivot.index, columns = ["PC" + str(i+1) for i in range(num_pcs)])
         w_df = pd.DataFrame(w, index = df_pivot.columns)
 
-        if return_df_pivot:
-            return w_df, pc_df, exp_var[range(num_pcs)], df_pivot
-        else:
-            return w_df, pc_df, exp_var[range(num_pcs)]
+        return w_df, pc_df, exp_var[range(num_pcs)]
+    
     else:
         raise ValueError("method can be 'unbalanced' or 'balanced_fill'")
                 
@@ -256,7 +194,7 @@ def construct_pcs(df, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5,
 # normalizes them to have mean zero and unit standard deviation
 # and runs a regression on factors supplied by the user. Before
 # running the regression the function orthgonalizes the factors
-def estimate_regs_on_factor(df, factors):
+def estimate_regs_on_factor(df, factors, daily = False):
     num_factors = factors.shape[1]
     # Normalizing the variables in the data frame:
     for i_col in range(df.shape[1]):
@@ -267,8 +205,11 @@ def estimate_regs_on_factor(df, factors):
     # component. From that we can calculate residuals and calculate
     # the overall R^2 which will say what is the share of explained
     # variance by the first PC.
-
-    reg_df = pd.merge(df, factors, on = ["date_mon"], how = "left") 
+    merge_columns = "date"
+    if daily:
+        merge_column = "date"
+    
+    reg_df = pd.merge(df, factors, on = [merge_column], how = "left") 
     
     # Sequentially estimating regressions on more and more factors:
     # (1) on factor 1, (2) on factors 1 and 2, (3) on factors 1,2
@@ -368,109 +309,152 @@ def generate_pc_weight_sum_stats_table(sum_stat_list, path, exp_var = None):
     f.close()
 
 
+################################################################
+# Loading data on different maturity interpolated D
+################################################################
+int_d_columns = ["secid", "date"] + [VARIABLE]
+int_d = pd.DataFrame(columns = int_d_columns)
 
+for days in [30, 60, 90, 120, 150, 180]:
+    print(days)
+    int_d_tmp = pd.read_csv("estimated_data/interpolated_D/int_ind_disaster_days_" + str(days) + ".csv")
+    int_d_tmp = int_d_tmp[int_d_columns]
+    int_d_tmp["m"] = days
+    int_d = int_d.append(int_d_tmp)
 
+################################################################
+# Filter observations (secid, date) that have the full term 
+# structure present
+################################################################
+int_d_var = int_d[["secid","date", "m", VARIABLE]]
+int_d_var = int_d_var[~int_d_var[VARIABLE].isnull()]
 
-w_df, pc_df = construct_pcs(
-        int_d_mon_mat, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5)
+# Pivoting table to only leave observations with full term structure present:
+pivot_mat = pd.pivot_table(int_d_var, index = ["secid", "date"], columns = "m", values = VARIABLE)
+pivot_mat = pivot_mat.dropna().reset_index()
 
-w_df, pc_df, exp_var = construct_pcs(
-        int_d_mon_mat[int_d_mon_mat.date_mon >= "2003-01-01"], 
-        num_pcs = 3, method = "balanced_fill", min_share_obs = 0.8)
-
-
-R2_agg_list, reg_factors_df = estimate_regs_on_factor(df_pivot, pc_df)
-R2_agg_list, reg_factors_df = estimate_regs_on_factor(df_pivot, lsc_factors_der)
-R2_agg_list, reg_factors_df = estimate_regs_on_factor(df_pivot, pc_post_df)
-
-
-w_sum_stats_list = pc_weights_sum_stats(w_df)
-generate_pc_weight_sum_stats_table(w_sum_stats_list, "test.tex", exp_var = R2_agg_list)
-
-
-
-
-
-
-
-## Looking at violin plot:
-#fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(13.5, 4))
-#r = axes[0].boxplot([np.array(w1_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
-#r = axes[1].boxplot([np.array(w2_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
-#r = axes[2].boxplot([np.array(w3_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
-#axes[0].set_title('PC1')
-#axes[1].set_title('PC2')
-#axes[2].set_title('PC3')
-#plt.setp(axes, xticks = [1,2,3,4,5,6],
-#         xticklabels = [30, 60, 90, 120, 150, 180])
-#plt.show()
-
-
-
-
-
-
+# Leaving only (secid, date) with the full term structure, got
+# these on the previous step
+int_d_var = pd.merge(pivot_mat[["secid", "date"]], int_d_var, 
+                     on = ["secid", "date"], how = "left")
 
 
 ################################################################
-# Running individual (secid, month, maturity) disaster measures
-# on level factor
+# Averaging within a month for each company and calculating number 
+# of days with observations. Filter by the number 
+# of observations in a month, e.g. if the secid has more than 5 
+# observations in a given month we include it in the
+# sample and use it for calculations later on
 ################################################################
+def mean_with_truncation(x):
+    return np.mean(x[(x <= np.quantile(x, 0.99)) & (x >= np.quantile(x, 0.01))])
 
+pivot_mat["date"] = pd.to_datetime(pivot_mat["date"])
+pivot_mat["date_mon"] = pivot_mat["date"] + pd.offsets.MonthEnd(0)
+
+# Counting number of full observations for each (secid, month).
+mean_cnt_df = pivot_mat.groupby(["secid", "date_mon"])["date"].count().reset_index()
+mean_cnt_df = mean_cnt_df.rename({"date": "cnt"}, axis = 1)
+
+# Filtering by the minimum number of observations:
+mean_cnt_df = mean_cnt_df[mean_cnt_df.cnt >= MIN_OBS_PER_MONTH]
+num_secids_per_month = mean_cnt_df.reset_index().groupby("date_mon")["secid"].count()
+
+# Merging this back to dataframe with individual disaster series:
+int_d_var["date"] = pd.to_datetime(int_d_var["date"])
+int_d_var["date_mon"] = int_d_var["date"] + pd.offsets.MonthEnd(0)
+int_d_var = pd.merge(mean_cnt_df, int_d_var, on = ["secid", "date_mon"], how = "left")
+                        
+# Averaging within each (secid, month, maturity):
+int_d_mon_mat = int_d_var.groupby(["secid", "date_mon", "m"])[VARIABLE].mean().reset_index()
+
+############################################################################
+# Constructing unbalanced principal components:
+############################################################################
+df_pivot_unbalance = pivot_data_min_share(int_d_mon_mat, 0.5)
     
+w_unbalance, pc_unbalance = construct_pcs(
+        df_pivot_unbalance, num_pcs = 3, method = "unbalanced")
+
+# Calculating regressions of secids on unbalanced PCs:
+R2_unbalance, reg_unbalance = estimate_regs_on_factor(df_pivot_unbalance, pc_unbalance)
+
+# Statistics on weights for unbalanced PCs:
+w_sum_stats_unbalance = pc_weights_sum_stats(w_unbalance)
+generate_pc_weight_sum_stats_table(w_sum_stats_unbalance, "w_unbalance_sum_stats.tex", exp_var = R2_unbalance)
+
+# Saving tables with regressions:
+reg_unbalance.to_csv("estimated_data/term_structure/reg_results_pc_unbalance.csv", index = False)
+
+############################################################################
+# Constructing balance principal components:
+############################################################################
+df_pivot_balance = pivot_data_min_share(
+        int_d_mon_mat[int_d_mon_mat.date_mon >= "2003-01-01"], 0.8)
+
+w_balance, pc_balance, df_pivot_balance = construct_pcs(
+        df_pivot_balance, num_pcs = 3, method = "unbalanced")
+
+# Calculating regressions of secids on unbalanced PCs:
+R2_balance, reg_balance = estimate_regs_on_factor(df_pivot_balance, pc_balance)
+
+# Statistics on weights for unbalanced PCs:
+w_sum_stats_balance = pc_weights_sum_stats(w_balance)
+generate_pc_weight_sum_stats_table(w_sum_stats_balance, "w_balance_sum_stats.tex", exp_var = R2_balance)
+
+reg_balance.to_csv("estimated_data/term_structure/reg_results_pc_balance_post_02.csv", index = False)
+
+############################################################################
+# Constructing LSC factors using numerical derivatives:
+############################################################################
+# Using the same pivoted data as for unbalanced PCs. Working with average
+# quantities within each month. This gives an average term structure for
+# each (secid, month). Calculating the level, slope and curvature factors
+# from this average quantities.
+
+# Melting the monthly df_pivot back to calculate LSC factors
+df_to_calc_lsc = pd.melt(df_pivot_unbalance.reset_index(), id_vars = "date_mon").dropna()
+df_to_calc_lsc = df_to_calc_lsc.rename({"value": VARIABLE}, axis = 1)
+
+lsc_factors = construct_lsc_factors_monthly(df_to_calc_lsc)
     
-#reg_df = pd.merge(int_d_mon_mat, level_factor, on = ["date_mon"], how = "left")
-reg_df = pd.merge(int_d_mon_mat, lsc_factors_der, on = ["date_mon"], how = "left") 
-                       
-secid_list = np.unique(reg_df["secid"])
+# Calculating regressions of secids on LSC factors:
+R2_lsc, reg_lsc = estimate_regs_on_factor(df_pivot_unbalance, lsc_factors)
 
-results_list = []
-secid_name_list = []
-m_name_list = []
-for i_secid, secid in enumerate(secid_list):
-    if i_secid % 100 == 0:
-        print("secid %d out of %d" % (i_secid, len(secid_list)))
-    for m in [30, 60, 90, 120, 150, 180, "All"]:
-        secid_name_list.append(secid)
-        m_name_list.append(m)
-        if m == "All":
-            reg_df_sub = reg_df[reg_df.secid == secid]
-            results_list.append(smf.ols(formula = VARIABLE + " ~ level + slope + curve", data = reg_df_sub).fit())
-        else:    
-            reg_df_sub = reg_df[(reg_df.secid == secid) & (reg_df.m == m)]
-            results_list.append(smf.ols(formula = VARIABLE + " ~ level + slope + curve", data = reg_df_sub).fit())
-
-reg_res_df = pd.DataFrame({"secid": secid_name_list,
-              "m": m_name_list,
-              "alpha": [x.params[0] for x in results_list],
-              "alpha_se": [x.bse[0] for x in results_list],
-              "beta_level": [x.params[1] for x in results_list],
-              "beta_level_se": [x.bse[1] for x in results_list],
-              "beta_slope": [x.params[2] for x in results_list],
-              "beta_slope_se": [x.bse[2] for x in results_list],
-              "beta_curve": [x.params[3] for x in results_list],
-              "beta_curve_se": [x.bse[3] for x in results_list],
-              "R2": [x.rsquared for x in results_list],
-              "N": [x.nobs for x in results_list]})
-    
-    
-
-####################################################################################
-#reg_res_df[(reg_res_df.N >= 12*10) & (reg_res_df.m == 30)].R2.plot.hist()
-#reg_res_df[(reg_res_df.N >= 12*10) & (reg_res_df.m == "All")].R2.plot.hist()
-#    
-#
-#pd.pivot_table(reg_res_df[(reg_res_df.N >= 12*10) & (reg_res_df.m.isin([30,180]))][["secid","m", "beta_level"]],index = "secid", columns = "m").plot.hist(alpha = 0.5)
-#
-#
-#reg_res_df[(reg_res_df.N >= 12*10) & (reg_res_df.m != "All")].R2.mean()
+reg_lsc.to_csv("estimated_data/term_structure/reg_results_pc_lsc.csv", index = False)
 
 
-# Saving results:
-int_d_mon_mat.to_csv("estimated_data/term_structure/ind_secid_term_structure_" + VARIABLE + ".csv")
-reg_res_df.to_csv("estimated_data/term_structure/regressions_level_factor_" + VARIABLE + ".csv")
 
-#reg_res_df.to_csv("estimated_data/term_structure/regressions_lsc_D_clamp.csv")
+# Can we get a principal component on a daily level:
+total_number_of_days = len(np.unique(int_d_var["date"]))
+secid_share_days = int_d_var[int_d_var.m == 30].groupby("secid")["date"].count().sort_values(ascending = False)/total_number_of_days
+
+secid_list = list(secid_share_days.index[secid_share_days >= 0.3])
+
+df_pivot_daily = pd.pivot_table(
+    int_d_var[int_d_var.secid.isin(secid_list)], 
+    index = "date", columns = ["m", "secid"], values = VARIABLE)
+
+w_unbalance_daily, pc_unbalance_daily = construct_pcs(
+        df_pivot_daily, num_pcs = 3, method = "unbalanced")
+
+w_sum_stats_unbalance_daily = pc_weights_sum_stats(w_unbalance_daily)
+
+R2_unbalance_daily, reg_unbalance_daily = estimate_regs_on_factor(
+        df_pivot_daily, pc_unbalance_daily, daily = True)
+
+reg_unbalance_daily.to_csv("estimated_data/term_structure/reg_results_unbalance_daily.csv", index = False)
+
+####################################################################
+# Analyzing term structure of risk derived from S&P options
+####################################################################
+
+
+
+
+
+
+
 
 
 #if __name__ == "__main__":

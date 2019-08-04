@@ -129,91 +129,21 @@ def lsc_from_term_structure(sub_df):
     curve = np.mean(curve_x)
     return (level, slope, curve)
 
-lsc_ind_date_der = int_d_var.groupby(["secid", "date"]).apply(lsc_from_term_structure).apply(pd.Series)
-lsc_ind_date_der.columns = ["level", "slope", "curve"]
-lsc_ind_date_der = lsc_ind_date_der.reset_index()
-
-lsc_ind_date_der["date_mon"] = lsc_ind_date_der["date"] + pd.offsets.MonthEnd(0)
-lsc_ind_month_der = lsc_ind_date_der.groupby(["secid","date_mon"])["level", "slope", "curve"].mean()
-lsc_ind_month_der = lsc_ind_month_der.reset_index()
-
-lsc_factors_der = lsc_ind_month_der.groupby("date_mon")["level", "slope", "curve"].apply(mean_with_truncation).apply(pd.Series)
-for i in range(3):
-    lsc_factors_der.iloc[:,i] = lsc_factors_der.iloc[:,i]/np.std(lsc_factors_der.iloc[:,i])
-
-
-################################################################
-# Doing a PCA exercise. Due to a small number of firms with large
-# panel this can be problematic.
-################################################################    
-# First to look at the number of firms that we have let's 
-# calculate the share of total months that the firm is present
-# in the sample:
-total_number_of_months = len(np.unique(int_d_mon_mat["date_mon"]))
-secid_share_months = int_d_mon_mat[int_d_mon_mat.m == 30].groupby("secid")["date_mon"].count().sort_values(ascending = False)/total_number_of_months
-
-# Taking firms that are present in at least 50% of the sample.
-# There is a total of 126 such firms.
-min_month_share = 0.45
-secid_list = list(secid_share_months.index[secid_share_months >= min_month_share])
-num_secid = len(secid_list)
-
-# Calculating correlation matrix between all these firms:
-df_pivot = pd.pivot_table(
-        int_d_mon_mat[int_d_mon_mat.secid.isin(secid_list)], 
-        index = "date_mon", columns = ["m", "secid"], values = VARIABLE)
-
-
-
-w1, pc1 = construct_pc_unbalanced(df_pivot, 1)
-w2, pc2 = construct_pc_unbalanced(df_pivot, 2)
-w3, pc3 = construct_pc_unbalanced(df_pivot, 3)
-pc_df = pd.merge(pc1, pc2, left_index = True, right_index = True)
-pc_df = pd.merge(pc_df, pc3, left_index = True, right_index = True)
-
-# Calculating table with summary statistics on loadings for different
-# maturities. The idea is to show that the first principal component
-# is flat across maturities and second principal component has some
-# meaningful differences between maturities, e.g. slope
-col_list = ["load_" + str(x) for x in [30, 60, 90, 120, 150, 180]]
-w1_mat_split = pd.DataFrame(columns = col_list)
-w2_mat_split = pd.DataFrame(columns = col_list)
-w3_mat_split = pd.DataFrame(columns = col_list)
-
-for i in range(6):
-    w1_mat_split.iloc[:,i] = w1[i*num_secid:(i + 1)*num_secid]
-    w2_mat_split.iloc[:,i] = w2[i*num_secid:(i + 1)*num_secid]
-    w3_mat_split.iloc[:,i] = w3[i*num_secid:(i + 1)*num_secid]
-
-print("Summary statistics for loadings on PC1")
-print("--------------------------------------------------------------")
-w1_mat_sum_stat = (w1_mat_split*1000).describe().round(3).loc[["count", "mean", "std", "25%", "50%", "75%"],:]
-print(w1_mat_sum_stat)
-print("")
-print("Summary statistics for loadings on PC2")
-print("--------------------------------------------------------------")
-w2_mat_sum_stat = (w2_mat_split*1000).describe().round(3).loc[["count", "mean", "std", "25%", "50%", "75%"],:]
-print(w2_mat_sum_stat)
-print("")
-print("Summary statistics for loadings on PC3")
-print("--------------------------------------------------------------")
-w3_mat_sum_stat = (w3_mat_split*1000).describe().round(3).loc[["count", "mean", "std", "25%", "50%", "75%"],:]
-print(w3_mat_sum_stat)
-print("")
-
-# Looking at box plot
-fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(13.5, 4))
-r = axes[0].boxplot([np.array(w1_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
-r = axes[1].boxplot([np.array(w2_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
-r = axes[2].boxplot([np.array(w3_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
-axes[0].set_title('PC1')
-axes[1].set_title('PC2')
-axes[2].set_title('PC3')
-plt.setp(axes, xticks = [1,2,3,4,5,6],
-         xticklabels = [30, 60, 90, 120, 150, 180])
-plt.show()
-
-
+def construct_lsc_factors(df):
+    df_der = df.groupby(["secid", "date"]).apply(lsc_from_term_structure).apply(pd.Series)
+    df_der.columns = ["level", "slope", "curve"]
+    df_der = df_der.reset_index()
+    
+    df_der["date_mon"] = df_der["date"] + pd.offsets.MonthEnd(0)
+    df_month_der = df_der.groupby(["secid","date_mon"])["level", "slope", "curve"].mean()
+    df_month_der = df_month_der.reset_index()
+    
+    df_month_der = df_month_der.groupby("date_mon")["level", "slope", "curve"].apply(mean_with_truncation).apply(pd.Series)
+    for i in range(3):
+        df_month_der.iloc[:,i] = df_month_der.iloc[:,i]/np.std(df_month_der.iloc[:,i])
+        
+lsc_factors = construct_lsc_factors(int_d_var)
+    
 # In order to construct the principal components we need to carefully
 # reweight the data so that weights sum up to unity for each date:
 # Matrix with dummies if the observation is present:
@@ -241,7 +171,8 @@ def construct_pc_unbalanced(df_pivot, pc_num):
     return w_df, pc_df
 
 
-def construct_pcs(df, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5):
+def construct_pcs(df, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5,
+                  return_df_pivot = False):
     '''
     Function that calculates principal components in differen ways.
       1. PC based on unbalanced panel where observations are
@@ -289,7 +220,11 @@ def construct_pcs(df, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5):
         w_df = reduce(lambda df1, df2: 
             pd.merge(df1,df2,left_index = True, right_index = True), w_list)    
             
-        return w_df, pc_df
+        if return_df_pivot:
+            return w_df, pc_df, df_pivot
+        else:
+            return w_df, pc_df
+        
     elif method == "balanced_fill":
         # First, filling missing values with time series averages
         for i_col in range(len(df_pivot.columns)):
@@ -307,25 +242,21 @@ def construct_pcs(df, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5):
         
         pc_df = pd.DataFrame(pc_post, index = df_pivot.index, columns = ["PC" + str(i+1) for i in range(num_pcs)])
         w_df = pd.DataFrame(w, index = df_pivot.columns)
-        
-        return w_df, pc_df, exp_var[range(num_pcs)]
+
+        if return_df_pivot:
+            return w_df, pc_df, exp_var[range(num_pcs)], df_pivot
+        else:
+            return w_df, pc_df, exp_var[range(num_pcs)]
     else:
         raise ValueError("method can be 'unbalanced' or 'balanced_fill'")
                 
-
-w_df, pc_df = construct_pcs(
-        int_d_mon_mat, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5)
-
-w_df, pc_df, exp_var = construct_pcs(
-        int_d_mon_mat[int_d_mon_mat.date_mon >= "2003-01-01"], 
-        num_pcs = 3, method = "balanced_fill", min_share_obs = 0.8)
 
 ################################################################
 # Writing a function that takes in a data frame with observations
 # normalizes them to have mean zero and unit standard deviation
 # and runs a regression on factors supplied by the user. Before
 # running the regression the function orthgonalizes the factors
-def estimate_regs_on_factor(df, factors):      
+def estimate_regs_on_factor(df, factors):
     num_factors = factors.shape[1]
     # Normalizing the variables in the data frame:
     for i_col in range(df.shape[1]):
@@ -375,7 +306,15 @@ def estimate_regs_on_factor(df, factors):
         reg_list_factor = [results_list[x] for x in range(len(results_list)) if (index_list[x][2] - 1 == i_factors)]
         RSS = np.sum([np.sum([x**2 for x in y.resid]) for y in reg_list_factor])
         R2_agg_list.append((TSS - RSS)/TSS)
-    
+        
+    # Calculating marginal improvement on R squared:
+    R2_agg_list_to_return = []
+    for i in range(num_factors):
+        if i == 0:
+            R2_agg_list_to_return.append(R2_agg_list[i])
+        else:   
+            R2_agg_list_to_return.append(R2_agg_list[i] - R2_agg_list[i-1])
+            
     # Returing statistics on regressions in a dataframe:    
     res_df_to_return = pd.DataFrame({
             "m": [x[0] for x in index_list],
@@ -384,7 +323,60 @@ def estimate_regs_on_factor(df, factors):
             "R2": [x.rsquared for x in results_list],
             "N": [x.nobs for x in results_list]})
 
-    return R2_agg_list, res_df_to_return
+    return R2_agg_list_to_return, res_df_to_return
+
+
+def pc_weights_sum_stats(w):
+    '''
+    The input should be a dataframe with multiindex where the first level
+    is maturity (e.g. 30 or 120) and second level is secid.
+    '''
+    num_pcs = w.shape[1]
+    w_stats_list = []
+    
+    # Looping through different principal component
+    for i in range(num_pcs):
+        col_list = list(w.index.levels[0])
+        w_load = pd.DataFrame(columns = col_list)
+        # Looping through different matrities:
+        for i_m, m in enumerate(w_df.index.levels[0]):
+            w_load.iloc[:, i_m] = (w.iloc[:,i].loc[m]*1000).describe().loc[["count", "mean", "std", "25%", "50%", "75%"]]
+        
+        w_stats_list.append(w_load)
+        
+    return w_stats_list
+
+def generate_pc_weight_sum_stats_table(sum_stat_list, path, exp_var = None):
+    n_pcs = len(w_sum_stats_list)
+    n_loads = w_sum_stats_list[0].shape[1]
+    
+    f = open(path, "w")
+    f.write("\\begin{tabular}{l" + "r"*n_loads + "}\n")
+    
+    for i_pc in range(n_pcs):
+        l = w_sum_stats_list[i_pc].round(3)
+        if exp_var is None:
+            f.write("\\multicolumn{_n_loads_}{c}{Summary Statistics for Loading on PC_i_pc_} \\\\ \n".replace("_n_loads_", str(n_loads + 1)).replace("_i_pc_", str(i_pc + 1)))
+        else:
+            exp_var_i = round(exp_var[i_pc],3)
+            f.write("\\multicolumn{_n_loads_}{c}{Summary Statistics for Loading on PC_i_pc_, explains _exp_var_} \\\\ \n".replace("_n_loads_", str(n_loads + 1)).replace("_i_pc_", str(i_pc + 1)).replace("_exp_var_", str(exp_var_i)))
+            
+        f.write("\hline \\\\ \n")
+        f.write(l.to_latex().replace("\\begin{tabular}{l" + "r"*n_loads + "}\n\\toprule\n{}", "").replace("\end{tabular}\n", ""))
+    
+    f.write("\\end{tabular}\n")
+    f.close()
+
+
+
+
+
+w_df, pc_df = construct_pcs(
+        int_d_mon_mat, num_pcs = 3, method = "unbalanced", min_share_obs = 0.5)
+
+w_df, pc_df, exp_var = construct_pcs(
+        int_d_mon_mat[int_d_mon_mat.date_mon >= "2003-01-01"], 
+        num_pcs = 3, method = "balanced_fill", min_share_obs = 0.8)
 
 
 R2_agg_list, reg_factors_df = estimate_regs_on_factor(df_pivot, pc_df)
@@ -392,106 +384,26 @@ R2_agg_list, reg_factors_df = estimate_regs_on_factor(df_pivot, lsc_factors_der)
 R2_agg_list, reg_factors_df = estimate_regs_on_factor(df_pivot, pc_post_df)
 
 
-def pc_weights_sum_stats(w, path_to_write = None):
-    '''
-    The input should be a dataframe with multiindex where the first level
-    is maturity (e.g. 30 or 120) and second level is secid.
-    
-    If path_to_write is not None, then the latex table will be constructed
-    and saved at a specified path
-    '''
-    
-    # Looping through different principal component
-    
-    # Looping through different matrities:
-    for m in w_df.index.levels[0]:
-        
-    
+w_sum_stats_list = pc_weights_sum_stats(w_df)
+generate_pc_weight_sum_stats_table(w_sum_stats_list, "test.tex", exp_var = R2_agg_list)
 
 
 
 
-################################################################
-# Doing an actual PCA for the post 2002 period where there are
-# firms that are present in a large part of the sample
 
-# Taking firms that are present in at least 75% of post 2002
-# time period. There is a total of 53 such firms.
-total_number_of_months = len(np.unique(int_d_mon_mat[int_d_mon_mat.date_mon >= "2003-01-01"]["date_mon"]))
-secid_share_months = int_d_mon_mat[(int_d_mon_mat.m == 30) & (int_d_mon_mat.date_mon >= "2003-01-01")].groupby("secid")["date_mon"].count().sort_values(ascending = False)/total_number_of_months
 
-min_month_share = 0.75
-secid_list = list(secid_share_months.index[secid_share_months >= min_month_share])
-num_secid = len(secid_list)
 
-# Calculating correlation matrix between all these firms:
-int_d_mon_mat_sub = int_d_mon_mat[int_d_mon_mat.secid.isin(secid_list)]
-int_d_mon_mat_sub = int_d_mon_mat_sub[int_d_mon_mat_sub.date_mon >= "2003-01-01"] #& ([int_d_mon_mat.date_mon >= "2006-01-01"])]
-df_pivot = pd.pivot_table(
-        int_d_mon_mat_sub, 
-        index = "date_mon", columns = ["m", "secid"], values = VARIABLE)
-
-# For the part where I take the second half of the sample, I am going
-# to fill the missing values with a time series mean for this particular
-# company:
-for i_col in range(len(df_pivot.columns)):
-    x = np.array(df_pivot.iloc[:,i_col])
-    mean_x = np.nanmean(x)
-    df_pivot.iloc[:, i_col].loc[df_pivot.iloc[:,i_col].isnull()] = mean_x
-
-corr_df = np.corrcoef(np.array(df_pivot).T)
-eigenvalue_decompos = eigs(np.array(corr_df), corr_df.shape[0] + 1)
-all_eigs = eigenvalue_decompos[0].astype(float)
-exp_var = all_eigs/np.sum(all_eigs)
-w_post = eigenvalue_decompos[1].astype(float)[:,[0,1,2]]
-w_post = w_post/np.tile(np.sum(w_post, axis = 0).reshape((-1,3)), (w_post.shape[0], 1))
-pc_post = (np.array(df_pivot) @ w_post)
-pc_post_df = pd.DataFrame(pc_post, index = df_pivot.index, columns = ["PC1_sub", "PC2_sub", "PC3_sub"])
-
-# Now need to compare this with the principal component that I obtained
-# in unbalanced panel.
-pc_all_df = pd.merge(pc_df, pc_post_df, left_index = True, right_index = True, how = "left")
-pc_all_df[["PC1", "PC1_sub"]].plot()
-pc_all_df.diff().corr()
-
-# Looking at how the loading are distributed between maturities:
-col_list = ["load_" + str(x) for x in [30, 60, 90, 120, 150, 180]]
-w1_mat_split = pd.DataFrame(columns = col_list)
-w2_mat_split = pd.DataFrame(columns = col_list)
-w3_mat_split = pd.DataFrame(columns = col_list)
-
-for i in range(6):
-    w1_mat_split.iloc[:,i] = w_post[i*num_secid:(i + 1)*num_secid,0]
-    w2_mat_split.iloc[:,i] = w_post[i*num_secid:(i + 1)*num_secid,1]
-    w3_mat_split.iloc[:,i] = w_post[i*num_secid:(i + 1)*num_secid,2]
-
-print("Summary statistics for loadings on PC1")
-print("-----------------------------------------------------------------------------")
-w1_mat_sum_stat = w1_mat_split.describe().loc[["count", "mean", "std", "25%", "50%", "75%"],:]
-print(w1_mat_sum_stat)
-print("")
-print("Summary statistics for loadings on PC2")
-print("-----------------------------------------------------------------------------")
-w2_mat_sum_stat = w2_mat_split.describe().loc[["count", "mean", "std", "25%", "50%", "75%"],:]
-print(w2_mat_sum_stat)
-print("")
-print("Summary statistics for loadings on PC3")
-print("-----------------------------------------------------------------------------")
-w3_mat_sum_stat = w3_mat_split.describe().loc[["count", "mean", "std", "25%", "50%", "75%"],:]
-print(w3_mat_sum_stat)
-print("")
-
-# Looking at violin plot:
-fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(13.5, 4))
-r = axes[0].boxplot([np.array(w1_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
-r = axes[1].boxplot([np.array(w2_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
-r = axes[2].boxplot([np.array(w3_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
-axes[0].set_title('PC1')
-axes[1].set_title('PC2')
-axes[2].set_title('PC3')
-plt.setp(axes, xticks = [1,2,3,4,5,6],
-         xticklabels = [30, 60, 90, 120, 150, 180])
-plt.show()
+## Looking at violin plot:
+#fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(13.5, 4))
+#r = axes[0].boxplot([np.array(w1_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
+#r = axes[1].boxplot([np.array(w2_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
+#r = axes[2].boxplot([np.array(w3_mat_split.iloc[:,i]) for i in range(w1_mat_split.shape[1])])
+#axes[0].set_title('PC1')
+#axes[1].set_title('PC2')
+#axes[2].set_title('PC3')
+#plt.setp(axes, xticks = [1,2,3,4,5,6],
+#         xticklabels = [30, 60, 90, 120, 150, 180])
+#plt.show()
 
 
 

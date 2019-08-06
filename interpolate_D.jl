@@ -71,7 +71,7 @@ function calculate_D(sub_df, measure, days)
     y = y[y_non_missing]
 
     # Using only straddled maturities:
-    y_to_interp = (days - 1)/365
+    y_to_interp = days/365
     if length(x) == 0
         to_return =  NaN
     elseif length(x) == 1
@@ -89,7 +89,6 @@ function calculate_D(sub_df, measure, days)
 
     # returning interpolated D along with keys: secid, date
     return (sub_df.secid[1], sub_df.date[1], to_return)
-    # return to_return
 end
 
 sort!(df, [:secid, :date, :T])
@@ -103,11 +102,6 @@ print("\n--- Second Pass ----\n")
 # First interpolate previosuly calculated variables: D's and adjusted risk
 # neutral probabilities
 var_list = [:D, :D_in_sample, :D_clamp, :rn_prob_2sigma_ann, :rn_prob_20ann, :rn_prob_40ann]
-
-DataFrame(
-   secid = map(x -> x[1], tmp),
-   date = map(x -> x[2], tmp),
-   D = map(x -> x[3], tmp))
 
 for j in 1:length(var_list)
     var = var_list[j]
@@ -146,5 +140,4 @@ for j in 1:length(var_list)
 end
 
 print("\n--- Outputting Data ----\n")
-# CSV.write(string("estimated_data/interpolated_D/int_D_clamp_days_", days, "_", i_first, "_to_", i_last , ".csv"), D_to_save)
 CSV.write(string("estimated_data/interpolated_D/int_ind_disaster_days_", ARGS[1], ".csv"), df_to_save)

@@ -66,9 +66,6 @@ Plots.plot!(df_share_top_30.date_mon, df_share_top_30.share_inside, label = "Top
 
 
 
-
-
-
 inside_days = by(df, [:date, :secid],
     inside_ind = :T => x -> (maximum(x) >= days/365) & (minimum(x) <= days/365))
 
@@ -133,7 +130,7 @@ names!(emils_num_obs, [:secid, :emils_count])
 emils_num_obs[:emils_rank] = 1:size(emils_num_obs)[1]
 
 # Merging the two rankings:
-num_obs = join( emils_num_obs,num_obs_per_secid, on = :secid, kind = :left)
+num_obs = join(emils_num_obs, num_obs_per_secid, on = :secid, kind = :left)
 
 ################################################################################
 #### Calculating number of months for each secid where it has at least X days

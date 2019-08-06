@@ -1,6 +1,3 @@
-
-
-
 ################################################################################
 # Calculating share of disaster D in overall D for different parameters
 # values

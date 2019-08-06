@@ -94,11 +94,11 @@ for subdf in groupby(df[1:df_limit, :], [:secid, :date, :exdate])
 
         int_rate = interp_rate(opt_days_maturity - 1)/100
 
-        index_before = (dist_hist.secid .== secid) .& (dist_hist.ex_date .<= exp_date) .& (dist_hist.ex_date .>= obs_date)
+        index_before = (dist_hist.secid .== secid) .& (dist_hist.payment_date .<= exp_date) .& (dist_hist.payment_date .>= obs_date)
         if count(index_before) == 0
             dist_pvs = [0.0]
         else
-            dist_days = Dates.value.(dist_hist[index_before, :].ex_date .- obs_date) .- 1
+            dist_days = Dates.value.(dist_hist[index_before, :].payment_date .- obs_date) .- 1
             dist_amounts = dist_hist[index_before, :].amount
 
             dist_rates = map(days -> interp_rate(days), dist_days)./100

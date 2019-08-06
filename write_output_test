@@ -1,3 +1,0 @@
-echo "Starting" >> tracking_file.txt
-sudo python load_zcb.py
-echo "Finishing" >> tracking_file.txt

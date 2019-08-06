@@ -1,7 +1,0 @@
-sudo python loading_data.py -s 107758.0,112035.0,105236.0,138901.0,140010.0,101565.0,101206.0,133986.0,117929.0,147534.0,111504.0,125136.0,103395.0,128051.0,110742.0,101397.0,124720.0,189601.0,111623.0,151413.0,113945.0,109739.0,105643.0,103532.0,196077.0,105554.0,148320.0,205597.0,108847.0,102126.0  -b 1996 -e 2017 -o final_part2_24 2>&1 | tee log_failed_estimations.txt
-sudo julia -p 7 fit_smiles.jl final_part2_24 2>&1 | tee log_failed_estimations.txt
-sudo julia -p 7 est_parameters_rn_prob.jl final_part2_24 2>&1 | tee log_failed_estimations.txt
-
-sudo python loading_data.py -s 101164.0,119891.0,114022.0,106702.0,105831.0,103995.0,116532.0,104285.0,189999.0,203335.0,207283.0,142784.0,106819.0,107969.0,147359.0,103829.0,123735.0,112213.0,206009.0,127102.0,107555.0,139080.0,102580.0,110669.0,154904.0,125532.0,110924.0,7670.0,166312.0,126961.0  -b 1996 -e 2017 -o final_part3_59  2>&1 | tee log_failed_estimations.txt
-sudo julia -p 7 fit_smiles.jl final_part3_59 2>&1 | tee log_failed_estimations.txt
-sudo julia -p 7 est_parameters_rn_prob.jl final_part3_59 2>&1 | tee log_failed_estimations.txt

@@ -1,18 +1,18 @@
 # cd("/Users/rsigalov/Documents/PhD/disaster-risk-revision/")
 
-using DataFrames
-using LinearAlgebra # Package with some useful functions
-using Distributions # Package for normal CDF
-using IterTools
+@everywhere using Distributed
+@everywhere using DataFrames
+@everywhere using LinearAlgebra # Package with some useful functions
+@everywhere using Distributions # Package for normal CDF
 
 using CSV
-using Plots
 
-normal = Normal(0, 1) # random variable generator for all noraml innovations
-lognormal = LogNormal(0, 0.5) # Random variable generator for loadings
+@everywhere normal = Normal(0, 1) # random variable generator for all noraml innovations
+@everywhere lognormal = LogNormal(0, 0.5) # Random variable generator for loadings
+@everywhere T = 264
 
 # Function to simulate AR(1) with correct initial draws:
-function generate_AR_1(T, N, phi, std_e) # phi is AR1, phi = sqrt(rho) in the problem set
+@everywhere function generate_AR_1(T, N, phi, std_e) # phi is AR1, phi = sqrt(rho) in the problem set
     x = zeros(T,N)
 
     # Initializing AR(1) process:
@@ -41,9 +41,7 @@ function generate_AR_1(T, N, phi, std_e) # phi is AR1, phi = sqrt(rho) in the pr
     return x
 end
 
-# ar1 = generate_AR_1(264, 180, 0.9, 1)
-
-function simulate_many_pcs(rho_d, rho_i, std_e_i, n_sims, n_firms)
+@everywhere function simulate_many_pcs(rho_d, rho_i, std_e_i, n_sims, n_firms)
 
     corr_pc1_list = zeros(n_sims)
     corr_mean_list=  zeros(n_sims)
@@ -75,41 +73,42 @@ function simulate_many_pcs(rho_d, rho_i, std_e_i, n_sims, n_firms)
     return corr_pc1_list, corr_mean_list
 end
 
-corr_pc1_arr, corr_mean_arr = simulate_many_pcs(0.9, 0.9, 4, 1000, 30)
-Plots.histogram(abs.(corr_pc1_arr))
-Plots.histogram!(abs.(corr_mean_arr))
-
 std_e_i_list = [2, 4, 8]
 rho_d_list = [0.25, 0.5, 0.9]
 rho_i_list = [0.05, 0.5, 0.9]
 num_firms_list = [300, 500, 750, 1000]
+total_length = length(std_e_i_list) * length(rho_d_list) * length(rho_i_list) * length(num_firms_list)
 
-df_parameters = DataFrame(std_e_i = [1.0, 2.0], rho_d = [1.0, 2.0],
-                   rho_i = [1.0, 2.0], num_firms = [1, 2])
+std_e_i_arr = zeros(total_length)
+rho_d_arr = zeros(total_length)
+rho_i_arr = zeros(total_length)
+num_firms_arr = zeros(total_length)
 
-# Matrix of parameters:
-for p in Iterators.product(std_e_i_list,rho_d_list,rho_i_list,num_firms_list)
-    df_to_append = DataFrame(std_e_i = p[1], rho_d = p[2], rho_i = p[3], num_firms = p[4])
-    append!(df_parameters, df_to_append)
+i = 0
+for std_e_i in std_e_i_list
+    for rho_d in rho_d_list
+        for rho_i in rho_i_list
+            for num_firms in num_firms_list
+                global i += 1
+                std_e_i_arr[i] = std_e_i
+                rho_d_arr[i] = rho_d
+                rho_i_arr[i] = rho_i
+                num_firms_arr[i] = num_firms
+            end
+        end
+    end
 end
 
-df_parameters = df_parameters[3:end,:]
+num_firms_arr = convert.(Int, num_firms_arr)
 
-# Simulating PCA with all parameters and writing into a data frame:
-df_sim_results = DataFrame(std_e_i = [1.0, 2.0], rho_d = [1.0, 2.0],
-                          rho_i = [1.0, 2.0], num_firms = [1.0, 2.0],
-                          est = ["A", "B"], mean_est = [1.0, 2.0],
-                          med_est = [1.0,2.0], quant_5 = [1.0, 2.0],
-                          quant_95 = [1.0, 2.0])
+@everywhere struct sum_stat
+    mean
+    median
+    quant_5
+    quant_95
+end
 
-for i_row = 1:size(df_parameters)[1]
-# for i_row = 1:2
-    @show i_row
-    rho_d = df_parameters[i_row, 2]
-    rho_i = df_parameters[i_row, 3]
-    std_e_i = df_parameters[i_row, 1]
-    num_firms = df_parameters[i_row, 4]
-
+@everywhere function pc_summary_stats(std_e_i, rho_d, rho_i, num_firms)
     # 1. Simulating PCA
     corr_pc1_arr, corr_mean_arr =
         simulate_many_pcs(rho_d, rho_i, std_e_i, 1000, num_firms)
@@ -120,10 +119,7 @@ for i_row = 1:size(df_parameters)[1]
     quant_5_pc1 = quantile(abs.(corr_pc1_arr), 0.05)
     quant_95_pc1 = quantile(abs.(corr_pc1_arr), 0.95)
 
-    df_to_append = DataFrame(std_e_i = std_e_i, rho_d = rho_d, rho_i = rho_i,
-        num_firms = num_firms, est = "PC1", mean_est = mean_pc1,
-        med_est = median_pc1, quant_5 = quant_5_pc1, quant_95 = quant_95_pc1)
-    append!(df_sim_results, df_to_append)
+    pc1_sum_stat = sum_stat(mean_pc1,median_pc1,quant_5_pc1,quant_95_pc1)
 
     # 3. Caculating summary statistics for meanD
     mean_meanD = mean(abs.(corr_mean_arr))
@@ -131,26 +127,42 @@ for i_row = 1:size(df_parameters)[1]
     quant_5_meadD = quantile(abs.(corr_mean_arr), 0.05)
     quant_95_meanD = quantile(abs.(corr_mean_arr), 0.95)
 
-    df_to_append = DataFrame(std_e_i = std_e_i, rho_d = rho_d, rho_i = rho_i,
-        num_firms = num_firms, est = "meanD", mean_est = mean_meanD,
-        med_est = median_meadD, quant_5 = quant_5_meadD, quant_95 = quant_95_meanD)
-    append!(df_sim_results, df_to_append)
+    mean_sum_stat = sum_stat(mean_meanD,median_meadD,quant_5_meadD,quant_95_meanD)
 
+    return pc1_sum_stat, mean_sum_stat
 end
 
-df_sim_results = df_sim_results[3:end, :]
+print("\n--- Starting Simulations ----\n")
+print("\n--- First Pass ----\n")
+@time ests = pmap(pc_summary_stats, std_e_i_arr[1:2], rho_d_arr[1:2],
+    rho_i_arr[1:2], num_firms_arr[1:2])
+print("\n--- Second Pass ----\n")
+@time ests = pmap(pc_summary_stats, std_e_i_arr, rho_d_arr, rho_i_arr, num_firms_arr)
 
-CSV.write("simulation_pca_summary_stats_2.csv", df_sim_results)
+print("\n--- Aggregating and Saving Results ----\n")
+# Unpacking all the stuff and saving as CSV:
+df_sim_results = DataFrame(std_e_i = [1.0, 2.0], rho_d = [1.0, 2.0],
+                          rho_i = [1.0, 2.0], num_firms = [1.0, 2.0],
+                          est = ["A", "B"], mean_est = [1.0, 2.0],
+                          med_est = [1.0,2.0], quant_5 = [1.0, 2.0],
+                          quant_95 = [1.0, 2.0])
 
+for i = 1:length(ests)
+    est = ests[i][1]
+    df_to_append = DataFrame(std_e_i = std_e_i_arr[i], rho_d = rho_d_arr[i],
+        rho_i = rho_i_arr[i], num_firms = num_firms_arr[i], est = "PC1",
+        mean_est = est.mean, med_est = est.median, quant_5 = est.quant_5,
+        quant_95 = est.quant_95)
+    append!(df_sim_results, df_to_append)
 
-############################################
-# Writing a function to do the same in a parallelized wa with pmap:
+    est = ests[i][2]
+    df_to_append = DataFrame(std_e_i = std_e_i_arr[i], rho_d = rho_d_arr[i],
+        rho_i = rho_i_arr[i], num_firms = num_firms_arr[i], est = "MeanD",
+        mean_est = est.mean, med_est = est.median, quant_5 = est.quant_5,
+        quant_95 = est.quant_95)
+    append!(df_sim_results, df_to_append)
+end
 
+df_sim_results = df_sim_results[3:end,:]
 
-
-std_e_i_list = [2, 4, 8]
-rho_d_list = [0.25, 0.5, 0.9]
-rho_i_list = [0.05, 0.5, 0.9]
-num_firms_list = [300, 500, 750, 1000]
-
-[repmat(std_e_i_list,1,length(rho_d_list))'[:] repmat(rho_d_list,length(std_e_i_list),1)[:]]
+CSV.write("estimated_data/simulations/simulation_pca_summary_stats.csv", df_sim_results)

@@ -273,8 +273,6 @@ end
 # is no need to carry around all strikes and implied volatility arrays
 ########################################################################
 
-
-
 ################################################
 # Calculating Black-Scholes Price
 # function to calculate BS price for an asset with
@@ -299,6 +297,38 @@ function BS_put_price(S0, q, r, K, sigma, T)
     p2 = cdf.(Normal(), -d1) * S0 * exp(-q*T)
 
     return p1 - p2
+end
+
+function calc_implied_vol(price, S0, q, r, K, T, option_type)
+
+    if (option_type == "Call") | (option_type == "C")
+        to_minimize = (x::Vector, grad::Vector) -> (BS_call_price(S0, q, r, K, x[1], T) - price)^2
+    elseif (option_type == "Put") | (option_type == "P")
+        to_minimize = (x::Vector, grad::Vector) -> (BS_put_price(S0, q, r, K, x[1], T) - price)^2
+    else
+        error("option_type should be Call or Put")
+    end
+
+    opt1 = Opt(:GN_DIRECT_L, 1)
+    lower_bounds!(opt1, [0])
+    upper_bounds!(opt1, [2])
+    ftol_abs!(opt1, 1e-12)
+    maxtime!(opt1, 1) # Some optimization can get stuck there. So, we want to
+                      # limit optimization time
+
+    min_objective!(opt1, to_minimize)
+    x0 = [0.2]
+    (minf,minx,ret) = optimize(opt1, x0)
+
+    opt2 = Opt(:LN_COBYLA, 1)
+    lower_bounds!(opt2, [0])
+    upper_bounds!(opt2, [Inf])
+    ftol_abs!(opt2, 1e-12)
+
+    min_objective!(opt2, to_minimize)
+    (minf,minx,ret) = optimize(opt2, minx)
+
+    impl_vol_opt = minx[1]
 end
 
 
@@ -611,23 +641,29 @@ function estimate_parameters_index(spot, r, F, T, sigma_NTM, min_K, max_K, inter
     # 11. RN probability of two sigma drop:
     if sigma_NTM < 0.5
         rn_prob_2sigma = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
-            max(0, spot*(1-2*sigma_NTM)^(12*T)), min_K, max_K,  false)[1]
+            max(0, spot*(1-2*sigma_NTM)), min_K, max_K,  false)[1]
     else
         rn_prob_2sigma = NaN
     end
 
-    rn_prob_20ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
-        max(0, spot*(1-0.05)^(12*T)), min_K, max_K, false)[1]
-    rn_prob_40ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
-        max(0, spot*(1-0.1)^(12*T)), min_K, max_K, false)[1]
-    rn_prob_60ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
-        max(0, spot*(1-0.15)^(12*T)), min_K, max_K, false)[1]
-    rn_prob_80ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
-        max(0, spot*(1-0.2)^(12*T)), min_K, max_K, false)[1]
+    if sigma_NTM < 1
+        rn_prob_sigma = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+            max(0, spot*(1 - sigma_NTM)), min_K, max_K,  false)[1]
+    else
+        rn_prob_sigma = NaN
+    end
 
-    return V, IV, V_in_sample, IV_in_sample, V_clamp, IV_clamp, rn_prob_2sigma,
-        rn_prob_20ann, rn_prob_40ann, rn_prob_60ann, rn_prob_80ann
+    rn_prob_5 = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.05)), min_K, max_K, false)[1]
+    rn_prob_10 = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.1)), min_K, max_K, false)[1]
+    rn_prob_15 = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.15)), min_K, max_K, false)[1]
+    rn_prob_20 = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.2)), min_K, max_K, false)[1]
 
+    return V, IV, V_in_sample, IV_in_sample, V_clamp, IV_clamp, rn_prob_sigma,
+        rn_prob_2sigma, rn_prob_5, rn_prob_10, rn_prob_15, rn_prob_20
 
 end
 

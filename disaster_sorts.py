@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-This scripts performs sorts based on disaster measures:
+This scripts performs company sort based on the value of an individual 
+disaster measure. 
 """
 
 import numpy as np
@@ -154,31 +153,6 @@ def merge_and_filter_ind_disaster(days, var, min_obs_in_month, min_share_month):
 
     return disaster_ret_df
     
-# Merging individual companies disaster series with monthly returns after applying
-# filters
-merge_and_filter_ind_disaster(30, "D_clamp", 15, 0).to_csv(
-        "estimated_data/merged_disaster_ret_data/disaster_ret_30.csv", index = False)
-merge_and_filter_ind_disaster(60, "D_clamp", 15, 0).to_csv(
-        "estimated_data/merged_disaster_ret_data/disaster_ret_60.csv", index = False)
-merge_and_filter_ind_disaster(120, "D_clamp", 15, 0).to_csv(
-        "estimated_data/merged_disaster_ret_data/disaster_ret_120.csv", index = False)
-
-merge_and_filter_ind_disaster(30, "D_clamp", 15, 0.8).to_csv(
-        "estimated_data/merged_disaster_ret_data/disaster_ret_30_filter.csv", index = False)
-merge_and_filter_ind_disaster(60, "D_clamp", 15, 0.8).to_csv(
-        "estimated_data/merged_disaster_ret_data/disaster_ret_60_filter.csv", index = False)
-merge_and_filter_ind_disaster(120, "D_clamp", 15, 0.8).to_csv(
-        "estimated_data/merged_disaster_ret_data/disaster_ret_120_filter.csv", index = False)
-
-# Loading merged data frames for comparison:
-disaster_ret_30_df = pd.read_csv("estimated_data/merged_disaster_ret_data/disaster_ret_30.csv")
-disaster_ret_60_df = pd.read_csv("estimated_data/merged_disaster_ret_data/disaster_ret_60.csv")
-disaster_ret_120_df = pd.read_csv("estimated_data/merged_disaster_ret_data/disaster_ret_120.csv")
-
-disaster_ret_30_filter_df = pd.read_csv("estimated_data/merged_disaster_ret_data/disaster_ret_30_filter.csv")
-disaster_ret_60_filter_df = pd.read_csv("estimated_data/merged_disaster_ret_data/disaster_ret_60_filter.csv")
-disaster_ret_120_filter_df = pd.read_csv("estimated_data/merged_disaster_ret_data/disaster_ret_120_filter.csv")
-
 # Function for calculating weighted average (to weight return by market value)
 def wavg(group, avg_name, weight_name):
     d = group[avg_name]
@@ -229,225 +203,31 @@ def estimate_disaster_sort_strategy(disaster_ret_df, var_to_sort, value_weighted
         strategy_ret = strategy_ret.rename("strategy_ret")
         
     else:
-        disaster_ret_quants_df["ret_strategy"] = disaster_ret_quants_df["ret"] * disaster_ret_quants_df["action"]
-        strategy_ret = disaster_ret_quants_df.groupby("month_lead")["ret_strategy"].mean()
+        disaster_ret_quants_df["strategy_ret"] = disaster_ret_quants_df["ret"] * disaster_ret_quants_df["action"]
+        strategy_ret = disaster_ret_quants_df.groupby("month_lead")["strategy_ret"].mean()
         
     
     return strategy_ret
 
-
-strategy_ret_30_D_clamp = estimate_disaster_sort_strategy(disaster_ret_30_df, "D_clamp")
-strategy_ret_60_D_clamp = estimate_disaster_sort_strategy(disaster_ret_60_df, "D_clamp")
-strategy_ret_120_D_clamp = estimate_disaster_sort_strategy(disaster_ret_120_df, "D_clamp")
-
-strategy_ret_30_prob_20 = estimate_disaster_sort_strategy(disaster_ret_30_df, "rn_prob_20mon")
-strategy_ret_60_prob_20 = estimate_disaster_sort_strategy(disaster_ret_60_df, "rn_prob_20mon")
-strategy_ret_120_prob_20 = estimate_disaster_sort_strategy(disaster_ret_120_df, "rn_prob_20mon")
-
-strategy_ret_30_filter_D_clamp = estimate_disaster_sort_strategy(disaster_ret_30_filter_df, "D_clamp")
-strategy_ret_60_filter_D_clamp = estimate_disaster_sort_strategy(disaster_ret_60_filter_df, "D_clamp")
-strategy_ret_120_filter_D_clamp = estimate_disaster_sort_strategy(disaster_ret_120_filter_df, "D_clamp")
-
-strategy_ret_30_filter_prob_20 = estimate_disaster_sort_strategy(disaster_ret_30_filter_df, "rn_prob_20mon")
-strategy_ret_60_filter_prob_20 = estimate_disaster_sort_strategy(disaster_ret_60_filter_df, "rn_prob_20mon")
-strategy_ret_120_filter_prob_20 = estimate_disaster_sort_strategy(disaster_ret_120_filter_df, "rn_prob_20mon")
-
-(strategy_ret_30_D_clamp+1).cumprod().plot()
-(strategy_ret_60_D_clamp+1).cumprod().plot()
-(strategy_ret_120_D_clamp+1).cumprod().plot()
-
-(strategy_ret_30_filter_D_clamp+1).cumprod().plot()
-(strategy_ret_60_filter_D_clamp+1).cumprod().plot()
-(strategy_ret_120_filter_D_clamp+1).cumprod().plot()
-
-# Strategies for different number of days produce similar results so I will
-# only compare filtered vs. non-filtered 30 day strategies:
-compare_strategies = pd.merge(
-        strategy_ret_30_D_clamp.rename("D_clamp"), 
-        strategy_ret_30_filter_D_clamp.rename("filter_D_clamp"), on = "month_lead")
-compare_strategies = pd.merge(
-        compare_strategies,
-        strategy_ret_30_prob_20.rename("rn_prob_20"), on = "month_lead")
-compare_strategies = pd.merge(
-        compare_strategies,
-        strategy_ret_30_filter_prob_20.rename("filter_rn_prob_20"), on = "month_lead")
-(compare_strategies+1).cumprod().plot()
-
-############################################################
-# Comparing with other Fama-French portfolios:
-ff_df = pd.read_csv("estimated_data/final_regression_dfs/ff_factors.csv")
-ff_df["date"] = [str(x) + "01" for x in ff_df["date"]]
-ff_df["date"] = pd.to_datetime(ff_df["date"], format = "%Y%m%d")
-ff_df["date"] = ff_df["date"] + pd.offsets.MonthEnd(0)
-for i in range(len(ff_df.columns) - 1):
-    ff_df.iloc[:,i+1] = ff_df.iloc[:,i+1]/100
-ff_df = ff_df.set_index("date")
-    
-# 4. Merging with strategy returns data:
-compare_strategies = pd.merge(compare_strategies, ff_df, left_index = True, right_index = True)
-compare_strategies = compare_strategies.drop("RF", axis = 1)
-compare_strategies = compare_strategies.rename({"Mkt-RF": "MKT"}, axis = 1)
-
-# 6. Calculating cumulative log return:
-gross_ret = compare_strategies + 1
-log_ret = np.log(gross_ret)
-
-# 5. Dividing each column by its strandard deviation (to make them comparable):
-for i in range(len(log_ret.columns)):
-    log_ret.iloc[:,i] = log_ret.iloc[:,i]/(np.std(log_ret.iloc[:,i]))
-
-log_ret[["D_clamp", "filter_D_clamp", "rn_prob_20", "filter_rn_prob_20", "MKT"]].cumsum().plot(figsize = (10,7))
-plt.tight_layout()
-plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/images/disaster_sort_comp_filter.pdf")
-
-
-############################################################
-# Regressing strategy return on FF portfolios:
-# Regressing return of strategy on (1) Market, (2) 3 factors and (3) 5 factors
-
-results1 = smf.ols(formula = "D_clamp ~ MKT", data = compare_strategies*12).fit()
-results2 = smf.ols(formula = "D_clamp  ~ MKT + SMB + HML", data = compare_strategies*12).fit()
-results3 = smf.ols(formula = "D_clamp ~ MKT  + SMB + HML + CMA + RMW", data = compare_strategies*12).fit()
-
-results4 = smf.ols(formula = "filter_D_clamp ~ MKT", data = compare_strategies*12).fit()
-results5 = smf.ols(formula = "filter_D_clamp ~ MKT + SMB + HML", data = compare_strategies*12).fit()
-results6 = smf.ols(formula = "filter_D_clamp ~ MKT  + SMB + HML + CMA + RMW", data = compare_strategies*12).fit()
-
-info_dict={'R-squared' : lambda x: f"{x.rsquared:.2f}",
-           'No. observations' : lambda x: f"{int(x.nobs):d}"}
-
-summary = summary_col([results1, results2, results3, results4, results5, results6], stars=False, 
-            float_format='%0.4f',
-            regressor_order = ["Intercept", "MKT", "SMB", "HML", "CMA", "RMW"],
-            info_dict = info_dict)
-summary.as_latex()
-
-####################################################################
-# Assesing the sensitivity of portfolios formed on disaster measure
-# to the minimum number of observations in a month and to the share
-# of month with sufficient data
-####################################################################
-
-# First doing the observations in a day exercise:
-log_ret_list = []
-min_days_list = [0,5,10,15]
-
-for min_days in min_days_list :
-    print(min_days)
-    ret_strategy_sens = estimate_disaster_sort_strategy(
-            merge_and_filter_ind_disaster(30, "D_clamp", min_days, 0), 
-            "D_clamp")
-    
-    gross_ret = ret_strategy_sens + 1
-    log_ret = np.log(gross_ret)
-    log_ret = log_ret/(np.std(log_ret))
-    log_ret_list.append(log_ret)
-    
-
-# Merging series in a list with a reduce:
-log_ret_merged = reduce(lambda a,b: pd.merge(a,b, left_index = True, right_index = True),
-                        log_ret_list)
-log_ret_merged.columns = ["days_in_mon_" + str(x) for x in min_days_list]
-log_ret_merged.cumsum().plot()
-plt.tight_layout()
-plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/images/disaster_sort_sensitivity_days_in_mon.pdf")
-    
-# Next, doing the minimum share of months with data
-log_ret_list = []
-min_share_list = [0,0.25,0.5,0.75]
-
-for min_share in min_share_list:
-    print(min_share)
-    ret_strategy_sens = estimate_disaster_sort_strategy(
-            merge_and_filter_ind_disaster(30, "D_clamp", 15, min_share), 
-            "D_clamp")
-    
-    gross_ret = ret_strategy_sens + 1
-    log_ret = np.log(gross_ret)
-    log_ret = log_ret/(np.std(log_ret))
-    log_ret_list.append(log_ret)
-
-# Merging series in a list with a reduce:
-log_ret_merged = reduce(lambda a,b: pd.merge(a,b, left_index = True, right_index = True),
-                        log_ret_list)
-log_ret_merged.columns = ["days_in_mon_" + str(x) for x in min_share_list]
-log_ret_merged.cumsum().plot()
-plt.tight_layout()
-plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/images/disaster_sort_sensitivity_min_months.pdf")
-    
-
-# Next, doing the minimum share of months with data
-log_ret_list = []
-min_share_list = [0,0.05,0.1,0.15, 0.2, 0.25]
-
-for min_share in min_share_list:
-    print(min_share)
-    ret_strategy_sens = estimate_disaster_sort_strategy(
-            merge_and_filter_ind_disaster(30, "D_clamp", 15, min_share), 
-            "D_clamp")
-    
-    gross_ret = ret_strategy_sens + 1
-    log_ret = np.log(gross_ret)
-    log_ret = log_ret/(np.std(log_ret))
-    log_ret_list.append(log_ret)
-
-# Merging series in a list with a reduce:
-log_ret_merged = reduce(lambda a,b: pd.merge(a,b, left_index = True, right_index = True),
-                        log_ret_list)
-log_ret_merged.columns = ["days_in_mon_" + str(x) for x in min_share_list]
-log_ret_merged.cumsum().plot()
-plt.tight_layout()
-plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/images/disaster_sort_sensitivity_min_months_finer.pdf")
-
-
-
-################################################################
-# Comparing equal weighted and value weighted sorts
-################################################################
-df_tmp = merge_and_filter_ind_disaster(30, "D_clamp", 15, 0)
-
-log_ret_list = []
-for bool_ in [True, False]:
-    ret = estimate_disaster_sort_strategy(df_tmp, "D_clamp", bool_)
-    gross_ret = ret + 1
-    log_ret = np.log(gross_ret)
-    log_ret = log_ret/(np.std(log_ret))
-    log_ret_list.append(log_ret)
-    
-log_ret_merged = reduce(
-        lambda a,b: pd.merge(a,b, left_index = True, right_index = True),
-        log_ret_list)
-log_ret_merged.columns = ["Value Weighted", "Equal Weighted"]
-log_ret_merged.cumsum().plot()
-
-df_tmp = merge_and_filter_ind_disaster(30, "D_clamp", 15, 0.75)
-
-log_ret_list = []
-for bool_ in [True, False]:
-    ret = estimate_disaster_sort_strategy(df_tmp, "D_clamp", bool_)
-    gross_ret = ret + 1
-    log_ret = np.log(gross_ret)
-    log_ret = log_ret/(np.std(log_ret))
-    log_ret_list.append(log_ret)
-    
-log_ret_merged = reduce(
-        lambda a,b: pd.merge(a,b, left_index = True, right_index = True),
-        log_ret_list)
-log_ret_merged.columns = ["Value Weighted", "Equal Weighted"]
-log_ret_merged.cumsum().plot()
-
-
 ################################################################################
-# Comparing different filters for value weighted disaster sorted portfolios:
+# Merging and disaster series for individual companies with returns and 
+# market value and calculating returns on a strategy based on disaster variable
+# sorts
 ################################################################################
 disaster_ret_30_df = merge_and_filter_ind_disaster(30, "D_clamp", 15, 0)
 disaster_ret_60_df = merge_and_filter_ind_disaster(60, "D_clamp", 15, 0)
 disaster_ret_120_df = merge_and_filter_ind_disaster(120, "D_clamp", 15, 0)
 
-disaster_ret_30_filter_df = merge_and_filter_ind_disaster(30, "D_clamp", 15, 0.8)
-disaster_ret_60_filter_df = merge_and_filter_ind_disaster(60, "D_clamp", 15, 0.8)
-disaster_ret_120_filter_df = merge_and_filter_ind_disaster(120, "D_clamp", 15, 0.8)
+# Saving the merged returns-disaster risk data:
+disaster_ret_30_df = disaster_ret_30_df.drop("date", axis = 1)
+disaster_ret_60_df = disaster_ret_60_df.drop("date", axis = 1)
+disaster_ret_120_df = disaster_ret_120_df.drop("date", axis = 1)
 
+disaster_ret_30_df.to_csv("estimated_data/merged_disaster_ret_data/disaster_ret_30.csv", index = False)
+disaster_ret_60_df.to_csv("estimated_data/merged_disaster_ret_data/disaster_ret_60.csv", index = False)
+disaster_ret_120_df.to_csv("estimated_data/merged_disaster_ret_data/disaster_ret_120.csv", index = False)
+
+# Calculating the returns on the trading strategy:
 strategy_ret_30_D_clamp = estimate_disaster_sort_strategy(disaster_ret_30_df, "D_clamp")
 strategy_ret_60_D_clamp = estimate_disaster_sort_strategy(disaster_ret_60_df, "D_clamp")
 strategy_ret_120_D_clamp = estimate_disaster_sort_strategy(disaster_ret_120_df, "D_clamp")
@@ -460,31 +240,13 @@ strategy_ret_30_prob_40 = estimate_disaster_sort_strategy(disaster_ret_30_df, "r
 strategy_ret_60_prob_40 = estimate_disaster_sort_strategy(disaster_ret_60_df, "rn_prob_40mon")
 strategy_ret_120_prob_40 = estimate_disaster_sort_strategy(disaster_ret_120_df, "rn_prob_40mon")
 
-strategy_ret_30_filter_D_clamp = estimate_disaster_sort_strategy(disaster_ret_30_filter_df, "D_clamp")
-strategy_ret_60_filter_D_clamp = estimate_disaster_sort_strategy(disaster_ret_60_filter_df, "D_clamp")
-strategy_ret_120_filter_D_clamp = estimate_disaster_sort_strategy(disaster_ret_120_filter_df, "D_clamp")
-
-strategy_ret_30_filter_prob_20 = estimate_disaster_sort_strategy(disaster_ret_30_filter_df, "rn_prob_20mon")
-strategy_ret_60_filter_prob_20 = estimate_disaster_sort_strategy(disaster_ret_60_filter_df, "rn_prob_20mon")
-strategy_ret_120_filter_prob_20 = estimate_disaster_sort_strategy(disaster_ret_120_filter_df, "rn_prob_20mon")
-
-strategy_ret_30_filter_prob_40 = estimate_disaster_sort_strategy(disaster_ret_30_filter_df, "rn_prob_40mon")
-strategy_ret_60_filter_prob_40 = estimate_disaster_sort_strategy(disaster_ret_60_filter_df, "rn_prob_40mon")
-strategy_ret_120_filter_prob_40 = estimate_disaster_sort_strategy(disaster_ret_120_filter_df, "rn_prob_40mon")
-
 strategy_ret_list = [strategy_ret_30_D_clamp, strategy_ret_60_D_clamp, strategy_ret_120_D_clamp,
          strategy_ret_30_prob_20, strategy_ret_60_prob_20, strategy_ret_120_prob_20,
-         strategy_ret_30_prob_40, strategy_ret_60_prob_40, strategy_ret_120_prob_40,
-         strategy_ret_30_filter_D_clamp, strategy_ret_60_filter_D_clamp, strategy_ret_120_filter_D_clamp,
-         strategy_ret_30_filter_prob_20, strategy_ret_60_filter_prob_20, strategy_ret_120_filter_prob_20,
-         strategy_ret_30_filter_prob_40, strategy_ret_60_filter_prob_40, strategy_ret_120_filter_prob_40]
+         strategy_ret_30_prob_40, strategy_ret_60_prob_40, strategy_ret_120_prob_40]
 
 strategy_name_list = ["D_30", "D_60", "D_120", 
                       "p_20_30", "p_20_60", "p_20_120",
-                      "p_40_30", "p_40_60", "p_40_120",
-                      "D_30_filter", "D_60_filter", "D_120_filter", 
-                      "p_20_30_filter", "p_20_60_filter", "p_20_120_filter",
-                      "p_40_30_filter", "p_40_60_filter", "p_40_120_filter"]
+                      "p_40_30", "p_40_60", "p_40_120"]
 
 # Concatenating returns of each strategy and saving them in a single file:
 strategy_ret_to_save = reduce(
@@ -493,8 +255,9 @@ strategy_ret_to_save = reduce(
 strategy_ret_to_save.columns = strategy_name_list
 strategy_ret_to_save.to_csv("estimated_data/final_regression_dfs/disaster_sort_ret.csv")
 
-####################################################################
+################################################################################
 # Loading data on trading return of different sorts to do analysis
+################################################################################
 strategy_ret_df = pd.read_csv("estimated_data/final_regression_dfs/disaster_sort_ret.csv")
 strategy_ret_df = strategy_ret_df.set_index("month_lead")
 
@@ -524,8 +287,19 @@ log_ret.iloc[:,[6,7,8]].cumsum().plot(figsize = (7, 5))
 plt.tight_layout()
 plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/images/disaster_sort_vw_comp_4.pdf")    
 
+
+
+
+
+
 # 2. Calculating correlations between returns:
 strategy_ret_df.iloc[:,0:9].corr()
+
+(strategy_ret_df.loc[:, "D_30"] + 1).cumprod().plot()
+(ff_df[ff_df.index >= "1996-01-01"].loc[:, "MKT"] + 1).cumprod().plot()
+
+
+
 
 # 3. Loading FF portfolios to compare with disaster sort portfolio
 ff_df = pd.read_csv("estimated_data/final_regression_dfs/ff_factors.csv")
@@ -550,8 +324,17 @@ ff_to_comp.cumsum().plot(figsize = (8, 6))
 plt.tight_layout()
 plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/images/disaster_sort_vw_compare_with_ff.pdf")
 
+ff_to_comp.loc[:, ["D_30", "RMW"]].cumsum().plot(figsize = (8, 6))
+plt.tight_layout()
+plt.savefig("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/images/disaster_sort_vw_compare_with_rmw.pdf")
 
-# 4. Estimating regression of the return on each strategy on FF 5 factors:
+# 4. Correlation with FF portfolios
+f = open("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/tables/disaster_sort_vw_corr_with_ff.tex", "w")
+f.write(ff_to_comp.corr().round(3).to_latex())
+f.close()
+
+
+# 5. Estimating regression of the return on each strategy on FF 5 factors:
 reg_df = strategy_ret_df.copy()
 reg_df = pd.merge(reg_df, ff_df, left_index = True, right_index = True)
 
@@ -573,9 +356,120 @@ f = open("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/t
 f.write(stargazer.render_latex())
 f.close()
 
+# Doing extended regression table where I do regressions of strategy return on 
+# (1) just the market, (2) FF 3 factors and (3) FF 5 factors.
+results_list = []
+for name in ["D_30", "p_20_30"]:
+    # to have the same name for all variables
+    reg_df_tmp = reg_df.rename({name: "ret"}, axis = 1) 
+    results_list.append(
+            smf.ols(formula = "ret ~ MKT", 
+                    data = reg_df_tmp*12).fit())
+    results_list.append(
+            smf.ols(formula = "ret ~ MKT + SMB + HML", 
+                    data = reg_df_tmp*12).fit())
+    results_list.append(
+            smf.ols(formula = "ret ~ MKT + SMB + HML + CMA + RMW", 
+                    data = reg_df_tmp*12).fit())
+    
+# Outputting short regression results:
+stargazer = Stargazer(results_list)
+stargazer.custom_columns(["D_30"]*3 + ["prob 20"]*3, [1]*6)
+stargazer.covariate_order(['Intercept', 'MKT', 'SMB', 'HML', 'RMW', 'CMA'])
+stargazer.show_degrees_of_freedom(False)
+f = open("/Users/rsigalov/Dropbox/2019_Revision/Writing/Predictive Regressions/tables/disaster_sort_reg_on_ff_2.tex", "w")
+f.write(stargazer.render_latex())
+f.close()
+
+####################################################################
+# Generating merged file with disaster measure, return, disaster
+# sorted portfolio assignment for each permno-month
+####################################################################
+disaster_ret_30_df = merge_and_filter_ind_disaster(30, "D_clamp", 15, 0)
+disaster_ret_60_df = merge_and_filter_ind_disaster(60, "D_clamp", 15, 0)
+disaster_ret_120_df = merge_and_filter_ind_disaster(120, "D_clamp", 15, 0)
 
 
 
+
+
+####################################################################
+# Comparing equal vs. value weighted sorts
+####################################################################
+
+# First, plotting the figures side-by-side
+disaster_ret_df = pd.read_csv("estimated_data/merged_disaster_ret_data/disaster_ret_30.csv")
+
+port_return_ew = estimate_disaster_sort_strategy(disaster_ret_df, "rn_prob_20mon", value_weighted = False)
+port_return_vw = estimate_disaster_sort_strategy(disaster_ret_df, "rn_prob_20mon", value_weighted = True)
+
+port_return_ew_vw_comp = pd.merge(
+        port_return_ew.rename("EW"), port_return_vw.rename("VW"), 
+        left_index = True, right_index = True)
+(port_return_ew_vw_comp+1).cumprod().plot()
+
+# Next, looking at companies in more details
+var_to_sort = "rn_prob_20mon"
+
+quant_low_out = disaster_ret_df.groupby("month_lead")[var_to_sort].quantile(0.01).rename("quant_low_out")
+quant_high_out = disaster_ret_df.groupby("month_lead")[var_to_sort].quantile(0.99).rename("quant_high_out")
+
+quant_low = disaster_ret_df.groupby("month_lead")[var_to_sort].quantile(0.3).rename("quant_low")
+quant_high = disaster_ret_df.groupby("month_lead")[var_to_sort].quantile(0.7).rename("quant_high")
+
+# Plotting quantiles:
+quants_compare = pd.merge(
+        quant_low, quant_high, left_index = True, right_index = True)
+quants_compare.plot()
+
+
+# 2. Merging on original dataframe and assigning buckets:
+disaster_ret_quants_df = disaster_ret_df[["month_lead", var_to_sort, "ret", "MV"]]
+disaster_ret_quants_df = pd.merge(disaster_ret_quants_df, quant_low, on = "month_lead", how = "inner")
+disaster_ret_quants_df = pd.merge(disaster_ret_quants_df, quant_high, on = "month_lead", how = "inner")
+disaster_ret_quants_df = pd.merge(disaster_ret_quants_df, quant_low_out, on = "month_lead", how = "inner")
+disaster_ret_quants_df = pd.merge(disaster_ret_quants_df, quant_high_out, on = "month_lead", how = "inner")
+
+disaster_ret_quants_df["action"] = 0
+disaster_ret_quants_df.loc[(disaster_ret_quants_df[var_to_sort] < disaster_ret_quants_df["quant_low"]) & 
+                           (disaster_ret_quants_df[var_to_sort] > disaster_ret_quants_df["quant_low_out"]),
+           "action"] = -1
+disaster_ret_quants_df.loc[(disaster_ret_quants_df[var_to_sort] > disaster_ret_quants_df["quant_high"]) & 
+                           (disaster_ret_quants_df[var_to_sort] < disaster_ret_quants_df["quant_high_out"]),
+           "action"] = 1
+
+# Plotting the distribution of market value for long and short companies
+# at different points in time:
+month_to_lot = "2010-01-31"
+df_to_plot = disaster_ret_quants_df[
+        disaster_ret_quants_df["month_lead"] == month_to_lot]
+
+plt.hist(df_to_plot[df_to_plot["action"] == 1]["MV"])
+
+
+
+
+
+
+
+# Doing weighting:
+if value_weighted:
+    ret_intermediate = disaster_ret_quants_df \
+        .groupby(["month_lead", "action"]) \
+        .apply(wavg, "ret", "MV") \
+        .reset_index() \
+        .rename({0: "ret"}, axis = 1)
+    
+    port_pivot = pd.pivot_table(
+            ret_intermediate, values = "ret", index = ["month_lead"], 
+            columns=["action"], aggfunc = np.sum)
+    
+    strategy_ret = port_pivot.iloc[:, 2] - port_pivot.iloc[:, 0]
+    strategy_ret = strategy_ret.rename("strategy_ret")
+    
+else:
+    disaster_ret_quants_df["strategy_ret"] = disaster_ret_quants_df["ret"] * disaster_ret_quants_df["action"]
+    strategy_ret = disaster_ret_quants_df.groupby("month_lead")["strategy_ret"].mean()
 
 
 

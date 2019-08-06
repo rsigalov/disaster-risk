@@ -124,19 +124,31 @@ function aggregate_disaster_measure(df, var_to_calculate)
     #     mean_filter = D_mean_filter[:],
     #     mean_all = D_average_all.D)
 
-    df_to_output = DataFrame(
+    # df_to_output = DataFrame(
+    #     date = D_average_all.date_adj,
+    #     mean_all = D_average_all.D,
+    #     mean_filter_days = D_filter_days.D
+    #     )
+
+    # returning two dataframes:
+    df_to_output_1 = DataFrame(
         date = D_average_all.date_adj,
-        mean_all = D_average_all.D,
-        mean_filter_days = D_filter_days.D
-        )
+        value = D_average_all.D,
+        var = string(var_to_calculate),
+        agg_type = "mean_all"
+    )
+    df_to_output_2 = DataFrame(
+        date = D_average_all.date_adj,
+        value = D_filter_days.D,
+        var = string(var_to_calculate),
+        agg_type = "mean_filter"
+    )
 
     # renaming columns according to the variable used:
     # new_names = Symbol.(["date", string(var_to_calculate,"_pc1"),
     #     string(var_to_calculate, "_mean_filter"), string(var_to_calculate,"_mean_all")])
-    new_names = Symbol.(["date", string(var_to_calculate,"_mean_all"), string(var_to_calculate, "_mean_filter_days")])
-    names!(df_to_output, new_names)
 
-    return df_to_output
+    return df_to_output_1, df_to_output_2
 end
 
 column_to_interpolate = names(df)[3:end]
@@ -147,20 +159,22 @@ i_col = 0
 
 print("\n ---- Starting Aggregation ----\n")
 
+df_agg = DataFrame(
+    date = [Dates.Date("1996-02-02")], value = [1.0], var = ["M"], agg_type = ["M"])
+
 for var_to_calculate in column_to_interpolate
     @show var_to_calculate
-    global i_col += 1
-
-    if i_col == 1
-        global df_agg = aggregate_disaster_measure(df, var_to_calculate)
-    else
-        df_to_join = aggregate_disaster_measure(df, var_to_calculate)
-        global df_agg = join(df_agg, df_to_join, on = [:date], kind = :left)
-    end
+    df_agg_1, df_agg_2 = aggregate_disaster_measure(df, var_to_calculate)
+    append!(df_agg, df_agg_1)
+    append!(df_agg, df_agg_2)
 end
+
+df_agg[:days] = days
+df_agg[:level] = "ind"
+df_agg = df_agg[2:end,:]
 
 print("\n ---- Saving Results ----\n")
 
-CSV.write(string("estimated_data/disaster-risk-series/agg_no_extr_", ARGS[1], "days.csv"), df_agg)
+CSV.write(string("estimated_data/disaster-risk-series/agg_combined_", ARGS[1], "days.csv"), df_agg)
 
 print("\n ---- Done ----\n")

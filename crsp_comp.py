@@ -1,0 +1,670 @@
+""" This is the docstring for crsp_comp.py. 
+This file contains a suite of functions that interact with the CRSP-COMPUSTAT
+database on WRDS.
+
+Authors: Roman Sigalov and Emil Siriwardane
+
+Affiliations: Both at Harvard Business School
+
+"""
+
+##  -----------------------------------------------------------------------
+##                                import
+##  -----------------------------------------------------------------------
+
+from __future__ import print_function
+from __future__ import division
+import sys
+import numpy as np
+import pandas as pd
+import wrds
+import datetime
+import time
+pd.options.display.max_columns = 20
+from pandas.tseries.offsets import *
+
+# Libraries to import and unpack .zip file from Ken French's website with
+# 5 Fama-French factors
+from io import BytesIO
+from zipfile import ZipFile
+from urllib.request import urlopen
+
+##  -----------------------------------------------------------------------
+##                               functions
+##  -----------------------------------------------------------------------
+def balance_monthly_data(df):
+    r'''
+    Helper function for balancing panel of CRSP return data
+    
+    Args:
+        df: Dataframe of CRSP returns
+
+    Returns:
+        balance_df: Dataframe containing permnos, years, and month for balanced
+        panel
+    
+    '''           
+    
+    # Get balanced panel
+    df['date_eom'] = pd.to_datetime(df['date'])
+    df.set_index('date_eom', inplace = True)
+    bdf = df.groupby('permno').resample('M')['y','m'].last().reset_index()
+        
+    # Fill in missing years and months
+    midx = pd.isnull(bdf.y)
+    bdf.loc[midx, 'y'] = [x.year for x in bdf[midx].date_eom]
+    bdf.loc[midx, 'm'] = [x.month for x in bdf[midx].date_eom]    
+    
+    return pd.merge(bdf, df, on = ['permno', 'y', 'm'], how = 'left')
+
+def compute_value_weights(p_df, scols):
+    r'''
+    Helper function to compute value weights for portfolio sorts on different
+    characteristics.
+
+    Args:
+        p_df: Dataframe containing, for each PERMNO-Date, the portfolio bin that
+              pertaining to a given characteristic. One of the columns must be:
+              'permco_mktcap', which provides the basis for computing value 
+              weights. The other column must be titled 'date'
+        scols: List of columns in p_df corresponding to characteristics
+    '''
+
+    for char in scols:
+        bin_mktcap = p_df.groupby(['date', char])['permco_mktcap'].sum().\
+                            reset_index().\
+                            rename(columns = {'permco_mktcap': 'tot_' + char})
+
+        p_df = pd.merge(p_df, bin_mktcap, on = ['date', char], 
+                        how = 'left')
+        p_df[char + '_vw'] = p_df['permco_mktcap'] / p_df['tot_' + char]
+        p_df.drop('tot_' + char, axis = 1, inplace = True)
+
+    p_df.drop('permco_mktcap', 1, inplace = True)
+
+    return p_df
+
+def get_monthly_returns(db, start_date, end_date, balanced = True):
+    r'''
+    Function to download monthly returns from CRSP and then compute delisted
+    returns following Shumway (1997). Observations are at the PERMNO-month
+    level. For PERMCO-months with multiple PERMNOS, we take the largest PERMNO
+    available on that date. 
+
+    Args:
+        db: Database connection using wrds module
+        start_date: String of start date for returns. Default to minimum
+        end_date: String of end date for returns. Default to maximum
+        balanced: Boolean indicating whether to balance the panel for each
+                  PERMNO
+
+    Returns:
+        df: Dataframe with the data, after cleaning    
+    '''
+    
+    # == Ensure dates are in proper format == #
+    sd = pd.to_datetime(start_date).strftime('%Y-%m-%d')
+    ed = pd.to_datetime(end_date).strftime('%Y-%m-%d')
+    
+    # == Download CRSP Monthly == #
+    crspm_raw = db.raw_sql("select a.cusip, a.permno, a.permco, a.date, " +\
+                      "a.ret, a.retx, a.prc, a.shrout," +\
+                      "abs(a.prc * a.shrout) as mktcap, " +\
+                      "extract(MONTH from a.date) as m, " +\
+                      "extract(YEAR from a.date) as y " +\
+                      "from crsp.msf as a " +\
+                      "join crsp.dsenames c " +\
+                      "on a.permno = c.permno " +\
+                      "where a.ret is not null and prc is not null and " +\
+                      "a.date >= c.namedt and a.date <= c.nameendt and " +\
+                      "date >= '%s' and date <= '%s' and " %(sd, ed) +\
+                      "c.shrcd in (10, 11) and c.exchcd in (1, 2, 3)")
+    crspm_raw.loc[:, 'date'] = pd.to_datetime(crspm_raw.loc[:, 'date'])
+
+    # == For PERMCO-DATES with multiple PERMNOs, aggregate market cap and 
+    #    use PERMNO with largest mkt cap as "main" PERMNO for each PERMCO == #
+    crspm_raw = crspm_raw.sort_values(['permco', 'date', 'mktcap'])
+    crsp_mkt = crspm_raw.groupby(['permco', 'date'])['mktcap'].sum().\
+                                                                  reset_index()
+    crspm_raw = crspm_raw.groupby(['permco', 'date']).last().reset_index()
+    crspm_raw = pd.merge(crspm_raw, crsp_mkt, left_on = ['permco', 'date'],
+                                    right_on = ['permco', 'date'])
+    crspm_raw.drop('mktcap_x', 1, inplace = True)
+    crspm_raw.rename(columns = {'mktcap_y': 'permco_mktcap'}, inplace = True)
+
+    # == Deal with delisted returns == #
+    delist = db.raw_sql("select *, extract(MONTH from dlstdt) as m, " +\
+                        "extract(YEAR from dlstdt) as y from crsp.msedelist")
+
+    # Follow Shumway (1997) by filling in missing delisted returns with 
+    # delist codes 400-591 as -30%
+    shumway_idx = ((pd.isnull(delist.dlret)) & (delist.dlstcd >= 400) & \
+                   (delist.dlstcd <= 591))
+    delist[shumway_idx] = -0.3
+
+    # Merge delisted returns with CRSP
+    crspm_raw = pd.merge(crspm_raw, 
+                         delist[['permno', 'y', 'm', 'dlret', 'dlretx']], 
+                         left_on = ['permno', 'y', 'm'], 
+                         right_on = ['permno', 'y', 'm'], how = 'left')    
+    idx = ((pd.isnull(crspm_raw.ret)) & (pd.isnull(crspm_raw.dlret))) 
+
+    # Total returns
+    crspm_raw['ret_gross'] = crspm_raw['ret'] + 1
+    crspm_raw['dlret_gross'] = crspm_raw['dlret'] + 1
+    crspm_raw['ret_adj'] = crspm_raw[['ret_gross']].fillna(1).multiply(\
+                           crspm_raw['dlret_gross'].fillna(1), 
+                           axis = 'index') - 1
+    crspm_raw.loc[idx,'ret_adj'] = np.nan            #Entries with no ret/dlret
+
+    # Ex-Dividend Returns
+    crspm_raw['retx_gross'] = crspm_raw['retx'] + 1
+    crspm_raw['dlretx_gross'] = crspm_raw['dlretx'] + 1
+    crspm_raw['retx_adj'] = crspm_raw[['retx_gross']].fillna(1).multiply(\
+                           crspm_raw['dlretx_gross'].fillna(1), 
+                           axis = 'index') - 1
+    crspm_raw.loc[idx, 'retx_adj'] = np.nan          #Entries with no ret/dlret
+    
+    # == Drop old returns and rename adjusted return columns
+    crspm_raw.drop(labels = ['ret', 'retx', 'dlret', 'dlretx', 'ret_gross', 
+                             'dlret_gross', 'retx_gross', 'dlretx_gross'], 
+                   axis = 1, inplace = True)
+    crspm_raw.rename(columns = {'ret_adj': 'ret', 
+                                'retx_adj': 'retx'},
+                    inplace = True)
+    
+    # == Return panel == #
+    if balanced:
+        # Balanced panel for permno-month == #
+        df = balance_monthly_data(crspm_raw)
+    else:
+        df = crspm_raw
+
+    return df
+
+def monthly_portfolio_sorts(db, df, sort_cols, ncuts, smoothing = 6):
+    r'''
+    Function to conduct monthly portfolio sorts based on PERMNO-Month
+    characteristics. The function value-weights and equal-weights, and for both,
+    only includes PERMNO-dates where value-weighted is possible.
+    
+    Args:
+        db: WRDS database connection
+        df: Dataframe containing date, PERMNO, and characteristics. If 
+        multiple characteristics are required, does portfolio sorts on each.
+        sort_cols: List of columns in df containing characteristics
+        ncuts: Integer for how many bins to create for the portfolio sorts
+        smoothing: Integer for window to smooth market capitalizations for 
+                   book-to-markets
+
+    Returns:
+        A dictionary where the keys are the variable that was sorted on 
+        and the values are dataframes containing the portfolio returns, as well
+        as the number of total PERMNOs for each month. In all cases,
+        the portfolio number is increasing in characteristic value (e.g.,
+        Portfolio 1 is the firms with the lowest characteristic)
+    
+    '''           
+    
+    # == Get CRSP Monthly Data, including delisted returns == #
+    sd = df['date'].min() -  MonthEnd(smoothing + 1)
+    ed = df['date'].max()
+    crsp = get_monthly_returns(db, sd, ed, balanced = False)
+
+    # Ensure CRSP data is at the end of each month for mergers later
+    crsp.loc[:, 'date'] = crsp.loc[:, 'date'] + MonthEnd(0)
+
+    # == Lag characteristics for portfolio sorts so that returns in month m
+    #    are based on characteristics in month m - 1 #
+    crsp['form_date'] = crsp['date'] - MonthEnd()
+
+    # == Get associated valuation ratios for each date in CRSP == #
+    crsp = get_bm_ratios(db, crsp, smoothing, comp_lag = 3)
+
+    # == Compute cuts == #
+    psorts = df.groupby('date')[sort_cols].transform(\
+                                        lambda q: pd.qcut(q, ncuts, 
+                                        labels = np.arange(1, ncuts + 1)))
+
+    # Merge back PERMNO-date information
+    psorts = psorts.join(df[['date', 'permno']])
+
+    # == Get value-weights and book-to-markets  == #
+    psorts = pd.merge(psorts, crsp[['date', 'permno', 'permco_mktcap', 'bm']],
+                      left_on = ['date', 'permno'],
+                      right_on = ['date', 'permno'],
+                      how = 'inner')
+
+    # Compute value-weights in each bin for each characteristic
+    psorts = compute_value_weights(psorts, sort_cols)
+
+    # == Merge with returns and compute portfolio returns == #
+    crsp_char = pd.merge(crsp, psorts, left_on = ['permno', 'form_date'],
+                         right_on = ['permno', 'date'],
+                         how = 'inner')
+    crsp_char.rename(columns = {'date_x': 'date',
+                                'bm_y': 'bm'}, inplace = True)
+    crsp_char.drop(['date_y', 'bm_x'], 1, inplace = True)
+                                
+    # == Assemble portfolios == #
+    portfolios = assemble_portfolios(crsp_char, sort_cols, ncuts)
+
+    return portfolios
+
+def assemble_portfolios(df, scols, ncuts):
+    r'''
+    Compute average realized portfolio returns and average book-to-market 
+    ratios at formation
+
+    Args:
+        df: Dataframe of PERMNOS-Date-Characteristic bins, plus returns and
+            book-to-market
+        scols: Columns in the dataframe containing sorting characteristics
+        ncuts: Number of portfolios
+
+    Returns:
+        storage_dict: Dictionary whose keys are characteristics. Each 
+                      characteristics is associated with:
+                            1. Realized portfolio returns
+                            2. Average book-to-markets at formation
+                            3. Portfolio constituents at formation
+
+    '''
+    storage_dict = {}
+
+    for char in scols:
+        
+        #Initialize dictionary entries
+        storage_dict[char] = {}
+
+        # Compute EW returns and counts, then join
+        ew_ret = df.groupby(['date', char])['ret'].mean().reset_index().\
+                    pivot(index = 'date', columns = char, values = 'ret')
+        ew_count = df.groupby(['date']).\
+                        apply(lambda x: len(x[[char,'ret']].dropna()))
+        ew_count.name = 'ew_count'
+        ew_ret = pd.DataFrame(ew_count).join(ew_ret)
+        ew_ret.rename(columns = dict([(x, 'ew_' + str(x) ) for x in \
+                                      np.arange(1, ncuts + 1)]),
+                      inplace = True)
+
+        # Compute VW returns and counts, then join
+        df[char + '_vw_ret'] = df[char + '_vw'] * df['ret']
+        vw_ret = df.groupby(['date', char])[char + '_vw_ret'].sum().\
+                            reset_index().\
+                            pivot(index = 'date', columns = char, 
+                                  values = char + '_vw_ret') 
+        vw_count = df.groupby(['date']).\
+                        apply(lambda x: len(x[char + '_vw_ret'].dropna()))
+        vw_count.name = 'vw_count'
+        vw_ret = pd.DataFrame(vw_count).join(vw_ret)
+        vw_ret.rename(columns = dict([(x, 'vw_' + str(x) ) for x in \
+                                      np.arange(1, ncuts + 1)]),
+                     inplace = True)
+
+        # Merge equal-weighted and value-weighted return dataframes
+        storage_dict[char]['ret'] = ew_ret.join(vw_ret)
+
+        # Compute EW book-to-market at formation date, with counts
+        ew_bm = df.groupby(['date', char])['bm'].mean().reset_index().\
+                    pivot(index = 'date', columns = char, values = 'bm')
+        ew_bm_count = df.groupby(['date']).\
+                        apply(lambda x: len(x[[char,'bm']].dropna()))
+        ew_bm_count.name = 'ew_bm_count'
+        ew_bm = pd.DataFrame(ew_bm_count).join(ew_bm)
+        ew_bm.rename(columns = dict([(x, 'ew_' + str(x) ) for x in \
+                                      np.arange(1, ncuts + 1)]),
+                     inplace = True)
+
+        # Compute VW book-to-market at formation date, with counts
+        df[char + '_vw_bm'] = df[char + '_vw'] * df['bm']
+
+        vw_bm = df.groupby(['date', char])[char + '_vw_bm'].sum().\
+                            reset_index().\
+                            pivot(index = 'date', columns = char, 
+                                  values = char + '_vw_bm')
+        vw_bm_count = df.groupby(['date']).\
+                        apply(lambda x: len(x[char + '_vw_bm'].dropna()))
+        vw_bm_count.name = 'vw_bm_count'
+        vw_bm = pd.DataFrame(vw_bm_count).join(vw_bm)
+        vw_bm.rename(columns = dict([(x, 'vw_' + str(x) ) for x in \
+                                      np.arange(1, ncuts + 1)]),
+                     inplace = True)                             
+
+        # Merge equal-weighted and value-weighted book-to-market dataframes
+        storage_dict[char]['bm'] = ew_bm.join(vw_bm)    
+
+        # Store portfolio constituents 
+        storage_dict[char]['constituents'] = \
+                                      df[['form_date', 'permno', char]].dropna()
+
+    return storage_dict
+
+def get_bm_ratios(db, crsp_df, smoothing, comp_lag = 3):
+    r'''
+    Takes panel of CRSP returns and market valuations and computes 
+    book-to-market ratios using COMPUSTAT data, with a user-defined 
+    input to determine how much to lag accounting data from market data. 
+    Book equity comes from COMPUSTAT Quarterly, Annual, and then from 
+    Fama, French, and Davis (2000), in that order.
+
+    Args:
+        db: WRDS database connection
+        crsp_df: Dataframe of CRSP data 
+        smoothing: Window to smooth market capitalizations for smooth BMs
+        comp_lag: Integer for desired lag (months) in accounting data.
+                  Default = 3.     
+
+    Returns:
+        crsp_df: Original dataframe, augmented with book-to-market ratio, both
+                 using current market cap and smoothed market cap   
+    '''
+
+    # == Get COMPUSTAT Annual and Quarterly == #
+    compq = get_comp_qtr(db, comp_lag)
+    compa = get_comp_ann(db, comp_lag)
+
+    # == Davis, Fama, and French  (2000) book equity == #
+    dff_be = pd.read_csv('DFF_BE.csv')
+    dff_be['dff_known_date_dt'] = [datetime.datetime(x, 6, 30) for \
+                                   x in dff_be.YEAR.values]
+    dff_be.drop('YEAR', 1, inplace = True)
+    dff_be.rename(columns = {'BE': 'DFF_BE'}, inplace = True)
+
+    # == For each PERMNO-Date, get the latest book value each source == #
+    crsp_ccm = get_latest_accounting(crsp_df, compa, 
+                                     acct_date = 'known_date_ann', 
+                                     acct_permno = 'lpermno')
+    crsp_ccm = get_latest_accounting(crsp_ccm, compq, 
+                                     acct_date = 'known_date_qtr', 
+                                     acct_permno = 'lpermno')  
+    crsp_ccm = get_latest_accounting(crsp_ccm, dff_be, 
+                                     acct_date = 'dff_known_date_dt', 
+                                     acct_permno = 'PERMNO')      
+
+    # == Use COMPQ, COMPA, then Fama-French-Davis book value == #
+    be_star = np.where(pd.isnull(crsp_ccm['beq']), crsp_ccm['be'], 
+                       crsp_ccm['beq'])
+    be_star = np.where(pd.isnull(be_star), crsp_ccm['DFF_BE'], be_star)    
+    crsp_ccm['be_star'] = be_star
+    crsp_ccm.loc[crsp_ccm.be_star < 0, :] = np.nan
+
+    crsp_ccm.drop(columns = ['be', 'beq', 'DFF_BE', 'dff_known_date_dt',
+                             'known_date_qtr', 'known_date_ann'],
+                  axis = 1, inplace = True)
+
+    # == Compute rolling market capitalization. Note that this ignores 
+    #    unbalanced panels and just uses last # of observations == #
+    rolling_mkt = crsp_ccm.groupby(['permno'])['permco_mktcap'].\
+                            apply(lambda x: x.rolling(window = smoothing, 
+                                min_periods = smoothing).mean())
+    rolling_mkt.name = 'rolling_mkt'
+    crsp_ccm = crsp_ccm.join(rolling_mkt)
+
+    # == Compute book-to-market == #
+    crsp_ccm['bm'] = crsp_ccm['be_star'] * 1000 / crsp_ccm['rolling_mkt']
+    crsp_ccm.drop('be_star', 1, inplace = True)
+
+    return crsp_ccm
+
+def get_latest_accounting(crsp_df, acct_df, acct_date, acct_permno):
+    r'''
+    Function to get, for each PERMNO-Date, the latest accounting data 
+    contained in be_df. 
+
+    Args:
+        crsp_df: Dataframe with CRSP data. We assume PERMNOS are contained in 
+                 the variable 'permnos' and date column 'date'
+        acct_df: Dataframe with the accounting data. It must have column for 
+                 PERMNOS and dates
+        acct_date: Column indicating date column in accounting dataframe to use
+                   when finding latest accounting data
+        acct_permno: Column indicating PERMNO column in accounting dataframe
+    '''
+
+    # == Do some setup == #
+    crsp_date = 'date'
+    crsp_permno = 'permno'
+    original_length = len(crsp_df)
+
+    # Rename accounting PERMNO column to same as in CRSP.
+    acct_df.rename(columns = {acct_permno: crsp_permno}, inplace = True)
+
+    # == Get latest accounting data == #
+    ccm = pd.merge(crsp_df[[crsp_permno, crsp_date]], acct_df, 
+                   left_on = [crsp_permno], 
+                   right_on = [crsp_permno], 
+                   how = 'left')
+    ccm = ccm[ccm[acct_date] <= ccm[crsp_date]].\
+                sort_values([crsp_permno, crsp_date])
+    ccm = ccm.groupby([crsp_permno, crsp_date]).last().reset_index()
+
+    # Ensure no stale data 
+    ddiff = (ccm[crsp_date] - ccm[acct_date]) / pd.offsets.Day(1)
+    #ccm = ccm[ddiff.astype(int) <= 366]      #Avoids stale     
+
+    # == Check to ensure each PERMNO-Date pair is unique and no lost data  == #
+    if len(ccm) != len(ccm.drop_duplicates([crsp_permno, crsp_date])):
+        raise ValueError("Duplicate PERMNO-Date Pairs")
+
+    # == Return with original data == #
+    return pd.merge(crsp_df, ccm, on = [crsp_permno, crsp_date], how = 'left')    
+
+def link_crsp_compustat(db, comp_df, datate_col):
+    r'''
+    Given a dataset of COMPUSTAT accounting data (Quarterly or Annual), get 
+    associated PERMNO using CRSP-COMPUSTAT linking table
+
+    Args:
+        db: WRDS database object
+        comp_df: Dataframe of Compustat data. Must have a 'gvkey' column
+        datadate_col: Column in COMPUSTAT data that has datadate column
+
+     Output:
+        comp_df: The input dataframe, augmented with PERMNOs (lpermno)
+    '''
+
+    # == Get linking table = =#
+    link_table = db.raw_sql("select * from crsp.ccmxpf_linktable where " +\
+                          "linktype in ('LU','LC','LD','LF','LN','LO','LS'," +\
+                          "'LX') and USEDFLAG = 1")    
+
+    link_table['linkdt_dt'] = pd.to_datetime(link_table['linkdt'])
+    link_table['linkenddt_dt'] = pd.to_datetime(link_table['linkenddt'])
+
+    # == Merge == #
+    comp_df = pd.merge(comp_df, link_table, left_on = ['gvkey'], 
+                                 right_on = ['gvkey'], how = 'inner')
+
+    dt_check = ((comp_df.linkdt_dt <= comp_df[datate_col]) | \
+                 pd.isnull(comp_df.linkdt_dt)) & \
+               ((comp_df[datate_col] <= comp_df.linkenddt_dt) \
+               | pd.isnull(comp_df.linkenddt_dt))
+
+    comp_df = comp_df[dt_check]
+
+    # == For permno-date pairs with multiple obs, take primary link == #
+    comp_df = comp_df.sort_values(['lpermno', datate_col, 'linkprim'])
+    comp_df = comp_df.groupby(['lpermno', datate_col,
+                               'linkprim']).last().reset_index()
+    comp_df.drop(['linkprim', 'liid', 'linktype', 'usedflag', 'linkdt', 
+                  'linkenddt', 'linkdt_dt', 'linkenddt_dt'], 1, inplace = True)
+
+    return comp_df.drop_duplicates(subset = ['lpermno', datate_col])
+
+def get_comp_qtr(db, comp_lag):
+    r''' 
+    Gets data for book values from COMPUSTAT quarterly
+
+    Args:
+        db: WRDS database connection 
+        comp_lag: Integer for desired lag (months) in accounting data.
+                  Default = 3.
+
+    Returns:
+        comp_qtr: Dataframe with gvkey-date-accounting info
+
+    '''
+
+    comp_qtr_raw = db.raw_sql("select gvkey, datadate as datadate_qtr, " +\
+                      "fyearq, fyr, fqtr, " +\
+                      "atq, txditcq, ceqq, pstkq, seqq, ltq, dlttq " +\
+                      "from compm.fundq where datafmt = 'STD' and " +\
+                      "indfmt = 'INDL' and popsrc = 'D' and consol = 'C'",
+                      date_cols = ["datadate_qtr"])
+
+    # Set known date and beginning of fiscal year
+    comp_qtr_raw["known_date_qtr"] = comp_qtr_raw["datadate_qtr"] + \
+                                                              MonthEnd(comp_lag)
+    comp_qtr_raw["begfy"] = comp_qtr_raw["datadate_qtr"] - MonthBegin(12)
+
+
+    # == For gvkeys with multiple obs on a datadate, take the one with the 
+    # latest fyearq.  == #
+    comp_qtr_raw = comp_qtr_raw.sort_values(['gvkey', 'datadate_qtr', 'fyearq'])
+    comp_qtr = comp_qtr_raw.drop_duplicates(subset = ['gvkey', 'datadate_qtr'], 
+                                            keep = 'last')
+
+    # == Drop firms who do not have two years of data (FF,JFE, 1993) == #
+    gvkey_count = comp_qtr.groupby('gvkey').cumcount() + 1
+    gvkey_count.name = 'count'
+    comp_qtr = comp_qtr.join(gvkey_count)
+    comp_qtr = comp_qtr[comp_qtr['count'] > 8]
+    
+    # == Compute book value of equity == #
+    comp_qtr['psq'] = comp_qtr['pstkq']
+    comp_qtr['psq'].fillna(0, inplace = True)
+    comp_qtr['txditcq'].fillna(0, inplace = True)
+
+    comp_qtr['ceq_psq'] = comp_qtr['ceqq'] + comp_qtr['psq']
+    comp_qtr['at_ltq'] = comp_qtr['atq'] - comp_qtr['ltq']
+    
+    seq = np.where(pd.isnull(comp_qtr["seqq"]), comp_qtr["ceq_psq"], 
+                   comp_qtr["seqq"])
+    seq = np.where(pd.isnull(seq), comp_qtr["at_ltq"], seq)    
+    
+    comp_qtr['beq'] = seq - comp_qtr.psq + comp_qtr.txditcq    
+
+    comp_qtr.dropna(subset = ['beq'], inplace = True)
+
+    # == Add PERMNOS for CRSP link == #
+    comp_qtr = link_crsp_compustat(db, comp_qtr, 'datadate_qtr')    
+
+    # # Saving file with quarterly compustat so that we don't need
+    # # to download the data everytime we run this
+    # comp_qtr.to_csv("comp_qtr.csv", index = False)
+
+    return comp_qtr[['lpermno','known_date_qtr', 'beq']]
+
+def get_comp_ann(db, comp_lag):
+    r''' 
+    Gets data for book values from COMPUSTAT annual
+
+    Args:
+        db: WRDS database connection 
+        comp_lag: Integer for desired lag (months) in accounting data.
+                  Default = 3.
+
+    Returns:
+        comp_ann: Dataframe with gvkey-date-accounting info
+
+    '''
+
+    # == Get raw data == #
+    comp_ann_raw = db.raw_sql("select gvkey, datadate as datadate_ann, " +\
+                        "fyear, fyr, at, pstkl, txditc, pstkrv, ceq, pstk, " +\
+                        "seq, lt, extract(YEAR from datadate) as year from " +\
+                        "compm.funda where datafmt = 'STD' and " +\
+                        "indfmt = 'INDL' and popsrc = 'D' and consol = 'C'",
+                        date_cols = ["datadate_ann"])
+    
+    # Set known date and beginning of fiscal year
+    comp_ann_raw["known_date_ann"] = comp_ann_raw["datadate_ann"] + \
+                                                              MonthEnd(comp_lag)
+    comp_ann_raw["begfy"] = comp_ann_raw["datadate_ann"] - MonthBegin(12)
+
+    # == For gvkeys with multiple obs in a calendar year, take last one. 
+    # This is for firms who change fiscal-year end within the year == #
+    comp_ann_raw = comp_ann_raw.sort_values(['gvkey', 'year', 'datadate_ann'])
+    comp_ann = comp_ann_raw.drop_duplicates(subset = ['gvkey', 'year'], 
+                                            keep = 'last')
+
+    # == Drop firms who do not have two years of data (FF,JFE, 1993) == #
+    gvkey_count = comp_ann.groupby('gvkey').cumcount() + 1
+    gvkey_count.name = 'count'
+    comp_ann = comp_ann.join(gvkey_count)
+    comp_ann = comp_ann[comp_ann['count'] > 2]
+
+    # == Compute book equity.  Incorporate Preferred Stock (PS) values use
+    # == the redemption value of PS, or the liquidation value the par value 
+    # == (in that order) (FF,JFE, 1993, p. 8).  Use Balance Sheet Deferred 
+    # == Taxes TXDITC if available  == #
+    
+    comp_ann['ps'] = np.where(comp_ann['pstkrv'].isnull(), comp_ann['pstkl'], 
+                              comp_ann['pstkrv'])
+    comp_ann['ps'] = np.where(comp_ann['ps'].isnull(), comp_ann['pstk'], 
+                              comp_ann['ps'])
+    comp_ann['ps'] = np.where(comp_ann['ps'].isnull(), 0, comp_ann['ps'])    
+    
+    comp_ann['txditc'].fillna(0, inplace = True)
+
+    #Now compute book equity
+    comp_ann['ceq_ps'] = comp_ann['ceq'] + comp_ann['ps']
+    comp_ann['at_lt'] = comp_ann['at'] - comp_ann['lt']
+    
+    se = np.where(pd.isnull(comp_ann["seq"]), comp_ann["ceq_ps"], 
+                  comp_ann["seq"])
+    se = np.where(pd.isnull(se), comp_ann["at_lt"], se)
+    
+    comp_ann['be'] = se - comp_ann.ps + comp_ann.txditc
+
+    comp_ann.dropna(subset = ['be'], inplace = True)
+
+    # == Add PERMNOS for CRSP link == #
+    comp_ann = link_crsp_compustat(db, comp_ann, 'datadate_ann')
+
+    return comp_ann[['lpermno', 'known_date_ann', 'be']]
+
+
+def load_FF():
+    r''' 
+        Gets 5 Fama-French factors directly from Ken French's website
+
+        Args:
+
+        Returns:
+            ff: dataframe with 5 Fama-French factors and date as index.
+                Returns are already divided by a hundred (originally)
+    '''
+
+    resp = urlopen("http://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_CSV.zip")
+    zipfile = ZipFile(BytesIO(resp.read()))
+    f = open("ff.csv", "w")
+    
+    indicator = False
+    counter = 0
+    for line in zipfile.open(zipfile.namelist()[0]).readlines():
+        line_text = line.decode('utf-8')
+    
+        if line_text[0] == ",":
+            indicator = True
+        
+        if line_text[0] == "\r":
+            indicator = False
+            counter += 1
+            
+        if not indicator and counter == 2:
+            break
+        
+        if indicator:
+            f.write(line_text)
+            
+    f.close()
+    
+    ff = pd.read_csv("ff.csv")
+    ff = ff.rename({ff.columns[0]: "date"}, axis = 1)
+    ff = ff.rename({"Mkt-RF": "MKT"}, axis = 1)
+    ff["date"] = pd.date_range(start = "1963-07-01", freq = "M", periods = ff.shape[0])
+    ff = ff.set_index("date")/100
+    
+    return ff

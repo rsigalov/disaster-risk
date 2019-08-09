@@ -23,7 +23,6 @@ import pandas as pd
 import wrds
 import time
 import crsp_comp as ccm
-# import 
 pd.options.display.max_columns = 20
 
 
@@ -72,9 +71,9 @@ def main(argv=None):
     db = wrds.Connection() # WRDS connection
     ncuts = 5   # Number of portfolios to use
     smoothing = 6 # Number of months to smooth market capitalization for BMs
-    
+
     # == Load in betas with respect to disaster risk factors == #
-    df = pd.read_csv("../estimated_data/disaster_risk_betas/" +\
+    df = pd.read_csv("estimated_data/disaster_risk_betas/" +\
                      "disaster_risk_betas.csv").dropna()
     df['date'] = pd.to_datetime(df['date_eom'])
     df.drop('date_eom', 1, inplace = True)
@@ -85,7 +84,7 @@ def main(argv=None):
                                                       smoothing)
 
     # == Output portfolios to disk == #
-    Saver(disaster_portfolios, '../estimated_data/portfolios')
+    Saver(disaster_portfolios, 'estimated_data/portfolios')
     print('Computed betas with respect to disaster risk factors ' +\
           'in %.2f minutes' %((time.time() - s) / 60))
 

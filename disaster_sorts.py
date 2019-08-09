@@ -15,15 +15,278 @@ from matplotlib import pyplot as plt
 from functools import reduce
 from stargazer.stargazer import Stargazer
 
+import crsp_comp
+
 os.chdir("/Users/rsigalov/Documents/PhD/disaster-risk-revision/")
 
+
+
+def load_and_filter_ind_disaster(days, min_obs_in_month, min_share_month):
+    ########################################################################
+    # Loading interpolated measures according to the specified number of days
+    # of interpolation
+    
+    file_name = "estimated_data/interpolated_D/int_ind_disaster_days_" + str(days) + ".csv"
+    D_df = pd.read_csv(file_name)
+    
+    # Dealing with dates:
+    D_df["date"] = pd.to_datetime(D_df["date"])
+    D_df["date_eom"] = D_df["date"] + pd.offsets.MonthEnd(0)
+    D_df = D_df.drop("date", axis = 1)
+    
+    ########################################################################
+    # Limiting to companies with at least 15 observations in a month in at least 80%
+    # months in the sample from January 1996 to December 2017.
+    def min_month_obs(x):
+        return x["D_clamp"].count() > min_obs_in_month
+    
+    D_filter_1 = D_df.groupby(["secid", "date_eom"]).filter(min_month_obs)
+    D_mon_mean = D_filter_1.groupby(["secid", "date_eom"]).mean().reset_index()
+    
+    num_months = len(np.unique(D_mon_mean["date_eom"]))
+    def min_sample_obs(x):
+        return x["D_clamp"].count() > num_months * min_share_month
+    
+    D_filter = D_mon_mean.groupby("secid").filter(min_sample_obs)
+    D_filter = D_filter.rename(columns = {"date_eom": "date"})
+    
+    return D_filter
+
+def link_to_secid(df):
+    """
+    df should contain columns date and permno to get the match
+
+    returns the same data frame with added column for OM secid
+    """
+    
+    # Manually reading optionmetrics-crsp linking suite since there is
+    # no dataset to download this from WRDS
+    oclink = pd.read_csv("estimated_data/crsp_data/optionmetrics_crsp_link.csv")
+    
+    # Getting the best link for each month end
+    oclink = oclink[oclink.score < 6]
+    oclink["sdate"] = [str(int(x)) for x in oclink["sdate"]]
+    oclink["sdate"] = pd.to_datetime(oclink["sdate"], format = "%Y%m%d")
+    oclink["edate"] = [str(int(x)) for x in oclink["edate"]]
+    oclink["edate"] = pd.to_datetime(oclink["edate"], format = "%Y%m%d")
+    
+    q1 = """
+    select 
+        d.*,
+        s1.secid as secid_1, 
+        s2.secid as secid_2,
+        s3.secid as secid_3,
+        s4.secid as secid_4,
+        s5.secid as secid_5
+    from df as d
+    
+    left join (select secid, permno, sdate, edate from oclink where score = 1) as s1
+    on d.permno = s1.permno and d.date >= s1.sdate and d.date <= s1.edate
+    
+    left join (select secid, permno, sdate, edate from oclink where score = 2) as s2
+    on d.permno = s2.permno and d.date >= s2.sdate and d.date <= s2.edate
+    
+    left join (select secid, permno, sdate, edate from oclink where score = 3) as s3
+    on d.permno = s3.permno and d.date >= s3.sdate and d.date <= s3.edate
+    
+    left join (select secid, permno, sdate, edate from oclink where score = 4) as s4
+    on d.permno = s4.permno and d.date >= s4.sdate and d.date <= s4.edate
+    
+    left join (select secid, permno, sdate, edate from oclink where score = 5) as s5
+    on d.permno = s5.permno and d.date >= s5.sdate and d.date <= s5.edate
+    """
+    
+    tmp = sqldf(q1, locals())
+    
+    # Filtering and providing the best match:
+    q2 = """
+    select 
+        *, COALESCE(secid_1, secid_2, secid_3, secid_4, secid_5) as secid
+    from tmp
+    """
+    
+    df = sqldf(q2, locals())
+    df = df.drop(columns = ["secid_1", "secid_2", "secid_3", "secid_4", "secid_5"])
+    
+    # Converting date columns to date format:
+    df["date"] = pd.to_datetime(df["date"])
+    
+    return df
+
+def portfolio_sorts_alt(db, crsp, df, sort_cols, ncuts, smoothing = 6):
+
+    # Ensure CRSP data is at the end of each month for mergers later
+    crsp.loc[:, 'date'] = crsp.loc[:, 'date'] + pd.offsets.MonthEnd(0)
+
+    # == Lag characteristics for portfolio sorts so that returns in month m
+    #    are based on characteristics in month m - 1 #
+    crsp['form_date'] = crsp['date'] - pd.offsets.MonthEnd()
+
+    # == Compute cuts == #
+    psorts = df.groupby('date')[sort_cols].transform(\
+                                        lambda q: pd.qcut(q, ncuts, 
+                                        labels = np.arange(1, ncuts + 1)))
+
+    
+    # Merge back PERMNO-date information
+    psorts = psorts.join(df[['date', 'secid']])
+
+    # == Get value-weights  == #
+    psorts = pd.merge(psorts, crsp[['date', 'secid', 'permno', 'permco_mktcap']],
+                      left_on = ['date', 'secid'],
+                      right_on = ['date', 'secid'],
+                      how = 'inner')
+
+    # Compute value-weights in each bin for each characteristic
+    psorts = crsp_comp.compute_value_weights(psorts, sort_cols)
+
+    # == Merge with returns and compute portfolio returns == #
+    crsp_char = pd.merge(crsp, psorts, left_on = ['permno', 'form_date'],
+                         right_on = ['permno', 'date'],
+                         how = 'inner')
+
+    crsp_char.rename(columns = {'date_x': 'date'}, inplace = True)
+    crsp_char.drop(['date_y'], 1, inplace = True)
+    
+    
+    # == Assemble portfolios == #
+    portfolios = assemble_portfolios_alt(crsp_char, sort_cols, ncuts)
+    
+    return portfolios
+
+def assemble_portfolios_alt(df, scols, ncuts):
+    storage_dict = {}
+
+    for char in scols:
+        
+        #Initialize dictionary entries
+        storage_dict[char] = {}
+
+        # Compute EW returns and counts, then join
+        ew_ret = df.groupby(['date', char])['ret'].mean().reset_index().\
+                    pivot(index = 'date', columns = char, values = 'ret')
+        ew_count = df.groupby(['date']).\
+                        apply(lambda x: len(x[[char,'ret']].dropna()))
+        ew_count.name = 'ew_count'
+        ew_ret = pd.DataFrame(ew_count).join(ew_ret)
+        ew_ret.rename(columns = dict([(x, 'ew_' + str(x) ) for x in \
+                                      np.arange(1, ncuts + 1)]),
+                      inplace = True)
+
+        # Compute VW returns and counts, then join
+        df[char + '_vw_ret'] = df[char + '_vw'] * df['ret']
+        vw_ret = df.groupby(['date', char])[char + '_vw_ret'].sum().\
+                            reset_index().\
+                            pivot(index = 'date', columns = char, 
+                                  values = char + '_vw_ret') 
+        vw_count = df.groupby(['date']).\
+                        apply(lambda x: len(x[char + '_vw_ret'].dropna()))
+        vw_count.name = 'vw_count'
+        vw_ret = pd.DataFrame(vw_count).join(vw_ret)
+        vw_ret.rename(columns = dict([(x, 'vw_' + str(x) ) for x in \
+                                      np.arange(1, ncuts + 1)]),
+                     inplace = True)
+    
+        # Merge equal-weighted and value-weighted return dataframes
+        storage_dict[char]['ret'] = ew_ret.join(vw_ret)
+
+        # Store portfolio constituents 
+        storage_dict[char]['constituents'] = df[['form_date', 'permno', char]].dropna()
+
+    return storage_dict
+
+    
+########################################################v
+# Example of how sorting works
+########################################################v
+# Before starting, open the connection:
+db = wrds.Connection()    
+
+# First, loading CRSP monthly returns:
+crsp_ret = crsp_comp.get_monthly_returns(db, "1996-01-01", "2017-12-31", balanced = True)
+crsp_ret["date"] = pd.to_datetime(crsp_ret["date"]) + pd.offsets.MonthEnd(0)
+
+# Second, using CRSP-OptionMetrics Linking suite to add secid to CRSP:
+crsp_ret = link_to_secid(crsp_ret)
+
+# Saving month by month CRSP-OptionMetrics link
+crsp_ret[["permno", "date", "secid"]].to_csv("CRSP_OM_link_by_month.csv", index = False)
+
+
+ports_all_days = {}
+days_list = [30,60,90,120,150,180]
+measure_list = ["D_clamp", "rn_prob_20", "rn_prob_40", "rn_prob_60", "rn_prob_80"]
+for days in days_list:
+    disaster_df = load_and_filter_ind_disaster(days, 5, 0)
+    ports_all_days[days] = portfolio_sorts_alt(db, crsp_ret, disaster_df, measure_list, ncuts = 5, smoothing = 6)
+    print("Completed %d days" % days)
+
+# Combining return results in one table:
+columns = ["days", "measure"]
+columns = columns + ["ew_count"] + ["ew_"+str(i+1) for i in range(5)]
+columns = columns + ["vw_count"] + ["vw_"+str(i+1) for i in range(5)]
+ret_ind_sort_combined = pd.DataFrame(columns = columns)
+for days in days_list:
+    for measure in measure_list:
+        to_append = ports_all_days[days][measure]["ret"]
+        to_append["days"] = days
+        to_append["measure"] = measure
+        ret_ind_sort_combined = ret_ind_sort_combined.append(to_append)
+        
+# Summary statistics:
+mean_comp_ew = ret_ind_sort_combined.groupby(["days","measure"])[["ew_1", "ew_5"]].mean()*12
+mean_comp_vw = ret_ind_sort_combined.groupby(["days","measure"])[["vw_1", "vw_5"]].mean()*12
+
+# Plotting the cumulative return for the most pronounced differences:
+
+# 3. Loading FF portfolios to compare with disaster sort portfolio
+ff_df = pd.read_csv("estimated_data/final_regression_dfs/ff_factors.csv")
+ff_df["date"] = [str(x) + "01" for x in ff_df["date"]]
+ff_df["date"] = pd.to_datetime(ff_df["date"], format = "%Y%m%d")
+ff_df["date"] = ff_df["date"] + pd.offsets.MonthEnd(0)
+for i in range(len(ff_df.columns) - 1):
+    ff_df.iloc[:,i+1] = ff_df.iloc[:,i+1]/100
+ff_df = ff_df.set_index("date")
+ff_df = ff_df.rename({"Mkt-RF": "MKT"}, axis = 1)
+
+# 5. Estimating regression of the return on each strategy on FF 5 factors:
+res_list_ew_1 = []
+res_list_ew_3 = []
+res_list_ew_5 = []
+res_list_vw_1 = []
+res_list_vw_3 = []
+res_list_vw_5 = []
+
+for days in days_list:
+    for measure in measure_list:
+        reg_df = ports_all_days[days][measure]["ret"][["ew_5", "ew_1"]]
+        reg_df["diff"] = reg_df["ew_5"] - reg_df["ew_1"]
+        reg_df = pd.merge(reg_df, ff_df, left_index = True, right_index = True)
+        res_list_ew_1.append(smf.ols(formula = "diff ~ MKT", data = reg_df*12).fit())
+        res_list_ew_3.append(smf.ols(formula = "diff ~ MKT + SMB + HML", data = reg_df*12).fit())
+        res_list_ew_5.append(smf.ols(formula = "diff ~ MKT + SMB + HML + CMA + RMW", data = reg_df*12).fit())
+        
+        reg_df = ports_all_days[days][measure]["ret"][["vw_5", "vw_1"]]
+        reg_df["diff"] = reg_df["vw_5"] - reg_df["vw_1"]
+        reg_df = pd.merge(reg_df, ff_df, left_index = True, right_index = True)
+        res_list_vw_1.append(smf.ols(formula = "diff ~ MKT", data = reg_df*12).fit())
+        res_list_vw_3.append(smf.ols(formula = "diff ~ MKT + SMB + HML", data = reg_df*12).fit())
+        res_list_vw_5.append(smf.ols(formula = "diff ~ MKT + SMB + HML + CMA + RMW", data = reg_df*12).fit())
+
+
+
+
+
+############################################################################
+#
+############################################################################
 
 def merge_and_filter_ind_disaster(days, var, min_obs_in_month, min_share_month): 
     ########################################################################
     # Loading interpolated measures according to the specified number of days
     # of interpolation
     
-    file_name = "estimated_data/interpolated_D/int_D_clamp_days_" + str(days) + ".csv"
+    file_name = "estimated_data/interpolated_D/int_ind_disaster_days_" + str(days) + ".csv"
     D_df = pd.read_csv(file_name)
     
     # Dealing with dates:
@@ -58,8 +321,6 @@ def merge_and_filter_ind_disaster(days, var, min_obs_in_month, min_share_month):
     oclink["sdate"] = pd.to_datetime(oclink["sdate"], format = "%Y%m%d")
     oclink["edate"] = [str(int(x)) for x in oclink["edate"]]
     oclink["edate"] = pd.to_datetime(oclink["edate"], format = "%Y%m%d")
-    
-#    pysqldf = lambda q: sqldf(q, locals())
     
     q1 = """
     select 
@@ -214,9 +475,9 @@ def estimate_disaster_sort_strategy(disaster_ret_df, var_to_sort, value_weighted
 # market value and calculating returns on a strategy based on disaster variable
 # sorts
 ################################################################################
-disaster_ret_30_df = merge_and_filter_ind_disaster(30, "D_clamp", 15, 0)
-disaster_ret_60_df = merge_and_filter_ind_disaster(60, "D_clamp", 15, 0)
-disaster_ret_120_df = merge_and_filter_ind_disaster(120, "D_clamp", 15, 0)
+disaster_ret_30_df = merge_and_filter_ind_disaster(30, "D_clamp", 5, 0)
+disaster_ret_60_df = merge_and_filter_ind_disaster(60, "D_clamp", 5, 0)
+disaster_ret_120_df = merge_and_filter_ind_disaster(120, "D_clamp", 5, 0)
 
 # Saving the merged returns-disaster risk data:
 disaster_ret_30_df = disaster_ret_30_df.drop("date", axis = 1)
@@ -227,18 +488,20 @@ disaster_ret_30_df.to_csv("estimated_data/merged_disaster_ret_data/disaster_ret_
 disaster_ret_60_df.to_csv("estimated_data/merged_disaster_ret_data/disaster_ret_60.csv", index = False)
 disaster_ret_120_df.to_csv("estimated_data/merged_disaster_ret_data/disaster_ret_120.csv", index = False)
 
-# Calculating the returns on the trading strategy:
+# Calculating the returns on the trading strategy with value-weighted portfolios:
 strategy_ret_30_D_clamp = estimate_disaster_sort_strategy(disaster_ret_30_df, "D_clamp")
 strategy_ret_60_D_clamp = estimate_disaster_sort_strategy(disaster_ret_60_df, "D_clamp")
 strategy_ret_120_D_clamp = estimate_disaster_sort_strategy(disaster_ret_120_df, "D_clamp")
 
-strategy_ret_30_prob_20 = estimate_disaster_sort_strategy(disaster_ret_30_df, "rn_prob_20mon")
-strategy_ret_60_prob_20 = estimate_disaster_sort_strategy(disaster_ret_60_df, "rn_prob_20mon")
-strategy_ret_120_prob_20 = estimate_disaster_sort_strategy(disaster_ret_120_df, "rn_prob_20mon")
+strategy_ret_30_prob_20 = estimate_disaster_sort_strategy(disaster_ret_30_df, "rn_prob_20")
+strategy_ret_60_prob_20 = estimate_disaster_sort_strategy(disaster_ret_60_df, "rn_prob_20")
+strategy_ret_120_prob_20 = estimate_disaster_sort_strategy(disaster_ret_120_df, "rn_prob_20")
 
-strategy_ret_30_prob_40 = estimate_disaster_sort_strategy(disaster_ret_30_df, "rn_prob_40mon")
-strategy_ret_60_prob_40 = estimate_disaster_sort_strategy(disaster_ret_60_df, "rn_prob_40mon")
-strategy_ret_120_prob_40 = estimate_disaster_sort_strategy(disaster_ret_120_df, "rn_prob_40mon")
+strategy_ret_30_prob_40 = estimate_disaster_sort_strategy(disaster_ret_30_df, "rn_prob_40")
+strategy_ret_60_prob_40 = estimate_disaster_sort_strategy(disaster_ret_60_df, "rn_prob_40")
+strategy_ret_120_prob_40 = estimate_disaster_sort_strategy(disaster_ret_120_df, "rn_prob_40")
+
+
 
 strategy_ret_list = [strategy_ret_30_D_clamp, strategy_ret_60_D_clamp, strategy_ret_120_D_clamp,
          strategy_ret_30_prob_20, strategy_ret_60_prob_20, strategy_ret_120_prob_20,
@@ -389,6 +652,19 @@ disaster_ret_30_df = merge_and_filter_ind_disaster(30, "D_clamp", 15, 0)
 disaster_ret_60_df = merge_and_filter_ind_disaster(60, "D_clamp", 15, 0)
 disaster_ret_120_df = merge_and_filter_ind_disaster(120, "D_clamp", 15, 0)
 
+# Analyzing Book-to-Market and Operating Profitability
+bm_df = pd.read_csv("estimated_data/ind_disaster_sorts/port_sort_bm.csv")
+bm_df.groupby(["variable", "days"])[["ew_" + str(x+1) for x in range(5)]].mean().T.plot()
+bm_df.groupby(["variable", "days"])[["vw_" + str(x+1) for x in range(5)]].mean().T.plot()
+
+op_df = pd.read_csv("estimated_data/ind_disaster_sorts/port_sort_op.csv")
+op_df.groupby(["variable", "days"])[["ew_" + str(x+1) for x in range(5)]].mean().T.plot()
+op_df.groupby(["variable", "days"])[["vw_" + str(x+1) for x in range(5)]].mean().T.plot()
+
+# Analyzing returns:
+df = pd.read_csv("estimated_data/ind_disaster_sorts/port_sort_ret.csv")
+df.groupby(["variable", "days"])[["ew_" + str(x+1) for x in range(5)]].mean()
+df.groupby(["variable", "days"])[["vw_" + str(x+1) for x in range(5)]].mean()
 
 
 

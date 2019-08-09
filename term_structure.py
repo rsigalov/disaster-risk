@@ -20,6 +20,7 @@ from scipy.sparse.linalg import eigs
 # Filter observations (secid, date) that have the full term 
 # structure present
 def filter_full_term_structure(int_d):
+    VARIABLE = "D_clamp"
     int_d_var = int_d[["secid","date", "m", VARIABLE]]
     int_d_var = int_d_var[~int_d_var[VARIABLE].isnull()]
     
@@ -385,6 +386,9 @@ def main(argv = None):
                             
     # Averaging within each (secid, month, maturity):
     int_d_mon_mat = int_d_var.groupby(["secid", "date_mon", "m"])[VARIABLE].mean().reset_index()
+
+    # Saving the average monthly term structure:
+    int_d_mon_mat.to_csv("estimated_data/interpolated_D/average_term_structure.csv", index = False)
     
     ############################################################################
     # Constructing unbalanced PCs

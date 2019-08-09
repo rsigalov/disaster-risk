@@ -122,7 +122,7 @@ def get_disaster_factors(innovation_method, level_filter = None,
         raise ValueError("innovation_method must be either 'AR' or 'fd'")
     
     # == Read in raw data == #
-    raw_f = pd.read_csv("../estimated_data/disaster_risk_measures/" +\
+    raw_f = pd.read_csv("estimated_data/disaster_risk_measures/" +\
                         "combined_disaster_df.csv")
     raw_f['date_eom'] = pd.to_datetime(raw_f['date'])
     raw_f.drop('date', axis = 1, inplace = True)
@@ -177,14 +177,43 @@ def main(argv = None):
     
     # == Get CRSP monthly data, filling in delisted returns == #
     crsp = crsp_comp.get_monthly_returns(db, start_date = '1986-01-01',
-                                    end_date = '2017-01-01', balanced = True)
+                                    end_date = '2017-12-31', balanced = True)
     
     # == Read in relevant factors and compute their innovations == #
+    # dis_fac, dis_fac_innov = get_disaster_factors(innovation_method = imethod,
+    #                                               level_filter = [argv[3]],
+    #                                               var_filter = [argv[1]],
+    #                                               day_filter = [float(argv[2])],
+    #                                               extrapolation_filter = ['N'])
+
+    # Getting a zoo of factors:
     dis_fac, dis_fac_innov = get_disaster_factors(innovation_method = imethod,
-                                                  level_filter = [argv[3]],
-                                                  var_filter = [argv[1]],
-                                                  day_filter = [float(argv[2])],
+                                                  level_filter = ["ind"],
+                                                  var_filter = ["D_clamp", "rn_prob_20", "rn_prob_80"],
+                                                  day_filter = [30,60,90,120,150,180],
                                                   extrapolation_filter = ['N'])
+
+    # Adding factors from term structue part:
+    # (1) Explicit level factor:
+    lsc = pd.read_csv("estimated_data/term_structure/lsc_factors.csv")
+    lsc["date_mon"] = pd.to_datetime(lsc["date_mon"])
+    lsc = lsc.set_index("date_mon").diff()
+    dis_fac_innov = pd.merge(
+        dis_fac_innov, lsc[["level"]], left_index = True, right_index = True, how = "left")
+
+    # (2) PC1 from balanced exercise:
+    pc_balanced = pd.read_csv("estimated_data/term_structure/pc_balanced.csv")
+    pc_balanced["date_mon"] = pd.to_datetime(pc_balanced["date_mon"])
+    pc_balanced = pc_balanced.set_index("date_mon").diff().rename(columns={"PC1":"PC1_balanced"})
+    dis_fac_innov = pd.merge(
+        dis_fac_innov, pc_balanced[["PC1_balanced"]], left_index = True, right_index = True, how = "left")
+
+    # (3) PC1 from unbalanced exerciseL
+    pc_unbalanced = pd.read_csv("estimated_data/term_structure/pc_unbalanced.csv")
+    pc_unbalanced["date_mon"] = pd.to_datetime(pc_unbalanced["date_mon"])
+    pc_unbalanced = pc_unbalanced.set_index("date_mon").diff().rename(columns={"PC1":"PC1_unbalanced"})
+    dis_fac_innov = pd.merge(
+        dis_fac_innov, pc_unbalanced[["PC1_unbalanced"]], left_index = True, right_index = True, how = "left")
 
     # == Merge returns with factor innovations == #
     crsp_with_fac = pd.merge(crsp, dis_fac_innov,
@@ -201,7 +230,7 @@ def main(argv = None):
     # == Output permno-date-betas == #
     output_df = crsp_with_fac[['permno', 'date_eom'] + \
                               ['beta_' + x for x in dis_fac_innov.columns]]
-    output_df.to_csv('../estimated_data/disaster_risk_betas/' +\
+    output_df.to_csv('estimated_data/disaster_risk_betas/' +\
                      'disaster_risk_betas.csv', index = False)
     print('Computed betas with respect to disaster risk factors ' +\
           'in %.2f minutes' %((time.time() - s) / 60))

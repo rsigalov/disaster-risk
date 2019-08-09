@@ -194,7 +194,7 @@ def get_monthly_returns(db, start_date, end_date, balanced = True):
         else:
             df = crspm_raw
 
-        df.to_csv("crsp_ret.csv", index = False)
+        df.to_csv("crsp_ret.csv")
 
         return df
 
@@ -227,7 +227,6 @@ def monthly_portfolio_sorts(db, df, sort_cols, ncuts, smoothing = 6):
     ed = df['date'].max()
     crsp = get_monthly_returns(db, sd, ed, balanced = False)
 
-
     # Ensure CRSP data is at the end of each month for mergers later
     crsp.loc[:, 'date'] = crsp.loc[:, 'date'] + MonthEnd(0)
 
@@ -244,6 +243,8 @@ def monthly_portfolio_sorts(db, df, sort_cols, ncuts, smoothing = 6):
                                         labels = np.arange(1, ncuts + 1)))
 
     # Merge back PERMNO-date information
+    # print(psorts.head())
+    # print(df[['date', 'permno']].head())
     psorts = psorts.join(df[['date', 'permno']])
 
     # == Get value-weights and book-to-markets  == #
@@ -254,7 +255,7 @@ def monthly_portfolio_sorts(db, df, sort_cols, ncuts, smoothing = 6):
 
     # Compute value-weights in each bin for each characteristic
     psorts = compute_value_weights(psorts, sort_cols)
-
+    
     # == Merge with returns and compute portfolio returns == #
     crsp_char = pd.merge(crsp, psorts, left_on = ['permno', 'form_date'],
                          right_on = ['permno', 'date'],
@@ -372,7 +373,6 @@ def get_bm_ratios(db, crsp_df, smoothing, comp_lag = 3):
     if name_crsp_ccm in  all_files:
         crsp_ccm = pd.read_csv(name_crsp_ccm)
         crsp_ccm["date"] = pd.to_datetime(crsp_ccm["date"])
-        crsp_ccm["date_eom"] = pd.to_datetime(crsp_ccm["date_eom"])
         crsp_ccm["form_date"] = pd.to_datetime(crsp_ccm["form_date"])
         return crsp_ccm
     else:
@@ -764,3 +764,14 @@ def load_and_filter_ind_disaster(days, min_obs_in_month, min_share_month):
     D_filter = D_filter.rename(columns = {"date_eom": "date"})
     
     return D_filter
+
+
+
+
+
+
+
+
+
+
+    

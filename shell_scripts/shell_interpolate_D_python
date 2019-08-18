@@ -1,0 +1,6 @@
+python interpolate_D.py 30
+python interpolate_D.py 60
+python interpolate_D.py 90
+python interpolate_D.py 120
+python interpolate_D.py 150
+python interpolate_D.py 180

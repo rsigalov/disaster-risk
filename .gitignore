@@ -3,3 +3,4 @@
 *.csv
 /estimated_data
 /crisis_timeline
+/__pycache__

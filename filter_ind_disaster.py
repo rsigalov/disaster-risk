@@ -23,7 +23,14 @@ import crsp_comp
 
 def main(argv=None):
 	days = argv[1]
-	disaster_df = crsp_comp.load_and_filter_ind_disaster(int(days), 5, 0)
-	disaster_df.to_csv("estimated_data/interpolated_D/mon_ind_disaster_days_" + days + ".csv")
+	if len(argv) > 2:
+		suffix = argv[2]
+		disaster_df = crsp_comp.load_and_filter_ind_disaster(int(days), 5, 0, suffix)
+		disaster_df.to_csv("estimated_data/interpolated_D/mon_ind_disaster_" + suffix + "_days_" + days + ".csv")
+	else:
+		disaster_df = crsp_comp.load_and_filter_ind_disaster(int(days), 5, 0)
+		disaster_df.to_csv("estimated_data/interpolated_D/mon_ind_disaster_days_" + days + ".csv")
+
+
 
 if __name__ == "__main__": sys.exit(main(sys.argv))

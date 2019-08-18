@@ -586,9 +586,9 @@ function calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, low_limit, high
 end
 
 function estimate_parameters(spot, r, F, T, sigma_NTM, min_K, max_K, interp_params)
-
+	
     # (1) Full SVI V and IV
-    V, IV = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, Inf, false)
+    # V, IV = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, 0, Inf, false)
     # (2) SVI with all intergrals estimated only from the minimum to maximum
     # available strikes
     V_in_sample, IV_in_sample = calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, min_K, max_K, false)
@@ -601,24 +601,30 @@ function estimate_parameters(spot, r, F, T, sigma_NTM, min_K, max_K, interp_para
     # 11. RN probability of two sigma drop:
     if sigma_NTM < 0.5
         rn_prob_2sigma = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
-            max(0, spot*(1-2*sigma_NTM)^(12*T)), min_K, max_K,  false)[1]
+            max(0, spot*(1 - 2*sigma_NTM)), min_K, max_K,  false)[1]
     else
         rn_prob_2sigma = NaN
     end
 
+    if sigma_NTM < 1
+        rn_prob_sigma = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+            max(0, spot*(1 - sigma_NTM)), min_K, max_K,  false)[1]
+    else
+        rn_prob_sigma = NaN
+    end
 
     # 12. Need 40% annualized decline. Not sure what annualized means
-    rn_prob_20ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
-        max(0, spot*(1-0.2)^(12*T)), min_K, max_K, false)[1]
-    rn_prob_40ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
-        max(0, spot*(1-0.4)^(12*T)), min_K, max_K, false)[1]
-    rn_prob_60ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
-        max(0, spot*(1-0.6)^(12*T)), min_K, max_K, false)[1]
-    rn_prob_80ann = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
-        max(0, spot*(1-0.8)^(12*T)), min_K, max_K, false)[1]
+    rn_prob_20 = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.2)), min_K, max_K, false)[1]
+    rn_prob_40 = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.4)), min_K, max_K, false)[1]
+    rn_prob_60 = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.6)), min_K, max_K, false)[1]
+    rn_prob_80 = calc_RN_CDF_PDF(spot, r, F, T, interp_params,
+        max(0, spot*(1-0.8)), min_K, max_K, false)[1]
 
-    return V, IV, V_in_sample, IV_in_sample, V_clamp, IV_clamp, rn_prob_2sigma,
-        rn_prob_20ann, rn_prob_40ann, rn_prob_60ann, rn_prob_80ann
+    return V_in_sample, IV_in_sample, V_clamp, IV_clamp, rn_prob_sigma,
+		rn_prob_2sigma, rn_prob_20, rn_prob_40, rn_prob_60, rn_prob_80
 
 end
 

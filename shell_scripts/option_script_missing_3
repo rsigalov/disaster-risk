@@ -1,0 +1,170 @@
+sudo python load_zcb.py
+
+sudo python loading_data.py -s 139259,106321,112284,129185,111951,123082,110086,101530,166796,6012,110678,108516,102352,103302,8500,111638,7811,126846,102211,109750,100963,8690,7630,127813,108697,9494,101954,107850,134585,108958  -b 1996 -e 2017 -o missing_part3_1
+sudo julia -p 7 fit_smiles.jl missing_part3_1
+sudo julia -p 7 est_parameters.jl missing_part3_1
+sudo rm data/raw_data/opt_data_missing_part3_1.csv
+sudo rm data/raw_data/dist_data_missing_part3_1.csv
+echo 'Done with group 1/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 103400,111462,8847,5828,101513,5237,136203,9005,108076,121762,8203,101096,123290,100971,150993,104053,110312,108373,110908,102123,107108,134769,8370,106417,107758,102789,9497,8881,127108,110211  -b 1996 -e 2017 -o missing_part3_2
+sudo julia -p 7 fit_smiles.jl missing_part3_2
+sudo julia -p 7 est_parameters.jl missing_part3_2
+sudo rm data/raw_data/opt_data_missing_part3_2.csv
+sudo rm data/raw_data/dist_data_missing_part3_2.csv
+echo 'Done with group 2/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 105346,112213,140584,108793,128003,110645,111799,103021,139465,122117,115419,100980,5297,127203,143523,107047,206515,144601,107867,139127,108922,155322,112129,102548,102426,189894,111436,120150,105254,113113  -b 1996 -e 2017 -o missing_part3_3
+sudo julia -p 7 fit_smiles.jl missing_part3_3
+sudo julia -p 7 est_parameters.jl missing_part3_3
+sudo rm data/raw_data/opt_data_missing_part3_3.csv
+sudo rm data/raw_data/dist_data_missing_part3_3.csv
+echo 'Done with group 3/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 126854,121968,106644,118974,110532,103898,8228,101035,110170,120698,109741,110108,103404,7770,120143,152056,5016,110872,111411,8774,108893,111628,5970,103134,8602,8411,9450,103201,104583,105784  -b 1996 -e 2017 -o missing_part3_4
+sudo julia -p 7 fit_smiles.jl missing_part3_4
+sudo julia -p 7 est_parameters.jl missing_part3_4
+sudo rm data/raw_data/opt_data_missing_part3_4.csv
+sudo rm data/raw_data/dist_data_missing_part3_4.csv
+echo 'Done with group 4/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 127540,111260,106466,104664,106295,5060,129367,128722,8215,108756,107053,5435,103887,8701,113175,101205,111906,139168,103627,5176,128705,106422,108813,104355,105179,121764,110107,5712,103937,103198  -b 1996 -e 2017 -o missing_part3_5
+sudo julia -p 7 fit_smiles.jl missing_part3_5
+sudo julia -p 7 est_parameters.jl missing_part3_5
+sudo rm data/raw_data/opt_data_missing_part3_5.csv
+sudo rm data/raw_data/dist_data_missing_part3_5.csv
+echo 'Done with group 5/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 144650,140538,107328,104348,103007,110784,103652,106475,5191,189807,109241,113110,7442,145878,127206,127081,9487,112166,109975,116070,101848,125226,101099,108389,103278,110810,7786,104395,110031,138596  -b 1996 -e 2017 -o missing_part3_6
+sudo julia -p 7 fit_smiles.jl missing_part3_6
+sudo julia -p 7 est_parameters.jl missing_part3_6
+sudo rm data/raw_data/opt_data_missing_part3_6.csv
+sudo rm data/raw_data/dist_data_missing_part3_6.csv
+echo 'Done with group 6/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 127115,9372,6708,6472,106166,123102,145765,9418,134783,107614,117074,112142,109447,123534,102361,6309,110304,123722,103811,111394,104183,109998,140540,108535,139035,103778,106566,205933,102056,139992  -b 1996 -e 2017 -o missing_part3_7
+sudo julia -p 7 fit_smiles.jl missing_part3_7
+sudo julia -p 7 est_parameters.jl missing_part3_7
+sudo rm data/raw_data/opt_data_missing_part3_7.csv
+sudo rm data/raw_data/dist_data_missing_part3_7.csv
+echo 'Done with group 7/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 138439,101893,117931,109939,107601,101508,107210,101828,139529,137155,7556,112176,109003,139078,140537,147784,103089,110008,5087,105907,105311,104124,112259,8858,127079,108231,101855,112459,111038,129235  -b 1996 -e 2017 -o missing_part3_8
+sudo julia -p 7 fit_smiles.jl missing_part3_8
+sudo julia -p 7 est_parameters.jl missing_part3_8
+sudo rm data/raw_data/opt_data_missing_part3_8.csv
+sudo rm data/raw_data/dist_data_missing_part3_8.csv
+echo 'Done with group 8/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 101088,102947,101560,110883,125174,139034,145686,111229,102608,108006,109670,139851,144654,143589,106080,8805,8117,103981,7120,103798,9451,106459,138895,121988,5309,8577,116071,112871,123090,101223  -b 1996 -e 2017 -o missing_part3_9
+sudo julia -p 7 fit_smiles.jl missing_part3_9
+sudo julia -p 7 est_parameters.jl missing_part3_9
+sudo rm data/raw_data/opt_data_missing_part3_9.csv
+sudo rm data/raw_data/dist_data_missing_part3_9.csv
+echo 'Done with group 9/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 105495,112467,111380,8695,101265,8285,5206,102893,8921,103312,9043,111001,121987,110146,108936,151717,112456,104893,108419,105002,109523,103903,107343,105073,112346,106822,120926,9498,5429,108969  -b 1996 -e 2017 -o missing_part3_10
+sudo julia -p 7 fit_smiles.jl missing_part3_10
+sudo julia -p 7 est_parameters.jl missing_part3_10
+sudo rm data/raw_data/opt_data_missing_part3_10.csv
+sudo rm data/raw_data/dist_data_missing_part3_10.csv
+echo 'Done with group 10/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 127468,116959,110015,117833,154960,207303,115210,105697,8290,103272,105948,107413,108588,106424,145638,107057,9044,101473,103923,102651,103513,110992,7369,105441,107557,146103,110143,104468,9300,110863  -b 1996 -e 2017 -o missing_part3_11
+sudo julia -p 7 fit_smiles.jl missing_part3_11
+sudo julia -p 7 est_parameters.jl missing_part3_11
+sudo rm data/raw_data/opt_data_missing_part3_11.csv
+sudo rm data/raw_data/dist_data_missing_part3_11.csv
+echo 'Done with group 11/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 147684,103065,101475,9367,107297,103672,107471,105643,101164,110202,108487,111867,111902,109586,6362,142772,101851,8249,104928,5442,127077,123538,102122,6283,101273,109568,140577,128121,111218,127105  -b 1996 -e 2017 -o missing_part3_12
+sudo julia -p 7 fit_smiles.jl missing_part3_12
+sudo julia -p 7 est_parameters.jl missing_part3_12
+sudo rm data/raw_data/opt_data_missing_part3_12.csv
+sudo rm data/raw_data/dist_data_missing_part3_12.csv
+echo 'Done with group 12/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 112845,111793,127038,140408,108847,8582,144561,147895,204200,105645,102589,107929,105442,106460,162295,140534,105166,128649,106702,122363,139129,110238,5240,135217,109780,127498,8994,7814,110881,5602  -b 1996 -e 2017 -o missing_part3_13
+sudo julia -p 7 fit_smiles.jl missing_part3_13
+sudo julia -p 7 est_parameters.jl missing_part3_13
+sudo rm data/raw_data/opt_data_missing_part3_13.csv
+sudo rm data/raw_data/dist_data_missing_part3_13.csv
+echo 'Done with group 13/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 100868,126850,107278,135212,110711,9031,104378,104517,108670,144595,101556,204209,105617,102375,144090,105581,101841,106443,107990,134893,100950,127080,5637,111310,107967,9022,151413,138887,110456,104150  -b 1996 -e 2017 -o missing_part3_14
+sudo julia -p 7 fit_smiles.jl missing_part3_14
+sudo julia -p 7 est_parameters.jl missing_part3_14
+sudo rm data/raw_data/opt_data_missing_part3_14.csv
+sudo rm data/raw_data/dist_data_missing_part3_14.csv
+echo 'Done with group 14/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 135334,107294,204281,126754,112335,106423,7806,5843,109456,106439,106725,110577,8239,128882,111048,103663,108247,110406,102027,8643,8028,7277,120154,8426,113067,110528,111641,106427,105303,124726  -b 1996 -e 2017 -o missing_part3_15
+sudo julia -p 7 fit_smiles.jl missing_part3_15
+sudo julia -p 7 est_parameters.jl missing_part3_15
+sudo rm data/raw_data/opt_data_missing_part3_15.csv
+sudo rm data/raw_data/dist_data_missing_part3_15.csv
+echo 'Done with group 15/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 6641,128083,109621,121592,103039,108954,111921,101299,112162,8680,111023,102993,121981,105197,7497,138898,9301,110007,135438,5579,112389,210475,6725,107642,107303,129735,121530,102155,105460,106259  -b 1996 -e 2017 -o missing_part3_16
+sudo julia -p 7 fit_smiles.jl missing_part3_16
+sudo julia -p 7 est_parameters.jl missing_part3_16
+sudo rm data/raw_data/opt_data_missing_part3_16.csv
+sudo rm data/raw_data/dist_data_missing_part3_16.csv
+echo 'Done with group 16/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 112325,5067,206812,104187,9207,101405,102529,110279,102210,107756,125559,129647,138302,9449,112339,5015,105144,147896,105880,105888,8948,114730,133920,5142,127324,151714,125529,109795,128902,109820  -b 1996 -e 2017 -o missing_part3_17
+sudo julia -p 7 fit_smiles.jl missing_part3_17
+sudo julia -p 7 est_parameters.jl missing_part3_17
+sudo rm data/raw_data/opt_data_missing_part3_17.csv
+sudo rm data/raw_data/dist_data_missing_part3_17.csv
+echo 'Done with group 17/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 106293,148481,109907,106450,6335,5782,129189,189496,104894,101948,8705,110290,108577,109270,8617,105389,126849,112443,101567,103363,104550,140578,8125,143524,107975,109652,8678,116908,127036,111794  -b 1996 -e 2017 -o missing_part3_18
+sudo julia -p 7 fit_smiles.jl missing_part3_18
+sudo julia -p 7 est_parameters.jl missing_part3_18
+sudo rm data/raw_data/opt_data_missing_part3_18.csv
+sudo rm data/raw_data/dist_data_missing_part3_18.csv
+echo 'Done with group 18/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 103147,109098,110911,111665,7374,103971,126681,101472,102892,155161,111306,122023,101386,101286,8824,5915,103822,5278,148138,117075,106688,5418,128706,108952,113737,101563,110985,105327,109598,7140  -b 1996 -e 2017 -o missing_part3_19
+sudo julia -p 7 fit_smiles.jl missing_part3_19
+sudo julia -p 7 est_parameters.jl missing_part3_19
+sudo rm data/raw_data/opt_data_missing_part3_19.csv
+sudo rm data/raw_data/dist_data_missing_part3_19.csv
+echo 'Done with group 19/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 139533,138598,111534,139685,108930,107884,110904,6345,8702,101930,128804,5089,102472,106892,5853,108486,8439,115143,120151,7644,5944,108934,124214,104866,106378,101749,7427,109969,111022,121745  -b 1996 -e 2017 -o missing_part3_20
+sudo julia -p 7 fit_smiles.jl missing_part3_20
+sudo julia -p 7 est_parameters.jl missing_part3_20
+sudo rm data/raw_data/opt_data_missing_part3_20.csv
+sudo rm data/raw_data/dist_data_missing_part3_20.csv
+echo 'Done with group 20/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 103464,138902,101204,8520,106049,108572,104228,105971,109573,104946,128598,8330,127148,107823,106453,144178,123246,9063,106017,138440,142792,6321,110046,105100,138430,109457,8646,115097,7753,111244  -b 1996 -e 2017 -o missing_part3_21
+sudo julia -p 7 fit_smiles.jl missing_part3_21
+sudo julia -p 7 est_parameters.jl missing_part3_21
+sudo rm data/raw_data/opt_data_missing_part3_21.csv
+sudo rm data/raw_data/dist_data_missing_part3_21.csv
+echo 'Done with group 21/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 138595,207490,138601,8880,106736,7229,6307,7888,119876,112185,106021,110964,112439,110623,109398,105978,109706,112409,109371,111088,106870,102408,139161,101281,104886,6241,111432,109995,6574,7403  -b 1996 -e 2017 -o missing_part3_22
+sudo julia -p 7 fit_smiles.jl missing_part3_22
+sudo julia -p 7 est_parameters.jl missing_part3_22
+sudo rm data/raw_data/opt_data_missing_part3_22.csv
+sudo rm data/raw_data/dist_data_missing_part3_22.csv
+echo 'Done with group 22/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 104076,8213,145637,128893,101956,105341,127109,7068,150862,6200,103597,114952,104613,102591,103834,102016,102502,104593,120142,103411,123533,110919,113427,110864,8155,101613,140580,111119,106745,6520  -b 1996 -e 2017 -o missing_part3_23
+sudo julia -p 7 fit_smiles.jl missing_part3_23
+sudo julia -p 7 est_parameters.jl missing_part3_23
+sudo rm data/raw_data/opt_data_missing_part3_23.csv
+sudo rm data/raw_data/dist_data_missing_part3_23.csv
+echo 'Done with group 23/24' >> tracking_file_missing.txt
+
+sudo python loading_data.py -s 112321,102026,101553,148399,124725,104452,106178,105340,112182,106958,109331,5837,107492,100987,108174,107004,102832,109372,108995,108185,205789,8042,138876,107036,8934,5250,102813,111390,108037,128805  -b 1996 -e 2017 -o missing_part3_24
+sudo julia -p 7 fit_smiles.jl missing_part3_24
+sudo julia -p 7 est_parameters.jl missing_part3_24
+sudo rm data/raw_data/opt_data_missing_part3_24.csv
+sudo rm data/raw_data/dist_data_missing_part3_24.csv
+echo 'Done with group 24/24' >> tracking_file_missing.txt
+

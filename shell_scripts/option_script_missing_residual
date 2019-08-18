@@ -1,0 +1,9 @@
+sudo python load_zcb.py
+
+sudo python loading_data.py -s 145566,136228,105573,5389,127083,144143,8706,103182,7333,6839,5644,108254,154886,128884,138922,108173,101166,151021,189805,107627,8811,101588,7202,5208,8513,140581,112689,101067,110700,189362,143526,101382,6137,111997,126928,208181,142883,101618,106318,145662,134770,142622,100900,106657,103812,8067  -b 1996 -e 2017 -o missing_residual
+sudo julia -p 7 fit_smiles.jl missing_residual
+sudo julia -p 7 est_parameters.jl missing_residual
+sudo rm data/raw_data/opt_data_missing_residual.csv
+sudo rm data/raw_data/dist_data_missing_residual.csv
+echo 'Done with residual ' >> tracking_file_missing.txt
+

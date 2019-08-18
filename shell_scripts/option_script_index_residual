@@ -1,0 +1,9 @@
+sudo python load_zcb.py
+
+sudo python loading_data_index.py -s 102445,101498,139242,100926,100929,100108,101485,108627,125041,102493,124203,121992,133897,100359,102496,108616,108656,108620,125453,139550  -b 1996 -e 2017 -o index_residual
+sudo julia -p 7 fit_smiles_index.jl index_residual
+sudo julia -p 7 est_parameters.jl index_residual
+sudo rm data/raw_data/opt_data_index_residual.csv
+sudo rm data/raw_data/dist_data_index_residual.csv
+echo 'Done with residual ' >> tracking_file_index.txt
+

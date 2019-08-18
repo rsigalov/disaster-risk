@@ -1,0 +1,30 @@
+sudo python load_zcb.py
+
+sudo python loading_data_index.py -s 139490,100219,124216,108944,123617,117801,133898,139491,102440,113183  -b 1996 -e 2017 -o index_part2_1
+sudo julia -p 7 fit_smiles_index.jl index_part2_1
+sudo julia -p 7 est_parameters.jl index_part2_1
+sudo rm data/raw_data/opt_data_index_part2_1.csv
+sudo rm data/raw_data/dist_data_index_part2_1.csv
+echo 'Done with group 1/4' >> tracking_file_index.txt
+
+sudo python loading_data_index.py -s 108591,109758,102456,100914,102454,102438,189691,150513,100221,109782  -b 1996 -e 2017 -o index_part2_2
+sudo julia -p 7 fit_smiles_index.jl index_part2_2
+sudo julia -p 7 est_parameters.jl index_part2_2
+sudo rm data/raw_data/opt_data_index_part2_2.csv
+sudo rm data/raw_data/dist_data_index_part2_2.csv
+echo 'Done with group 2/4' >> tracking_file_index.txt
+
+sudo python loading_data_index.py -s 122753,108680,102434,102450,100922,109762,113079,108622,108657,136164  -b 1996 -e 2017 -o index_part2_3
+sudo julia -p 7 fit_smiles_index.jl index_part2_3
+sudo julia -p 7 est_parameters.jl index_part2_3
+sudo rm data/raw_data/opt_data_index_part2_3.csv
+sudo rm data/raw_data/dist_data_index_part2_3.csv
+echo 'Done with group 3/4' >> tracking_file_index.txt
+
+sudo python loading_data_index.py -s 101497,100181,108619,123777,113164,103938,135313,108612,109757,115115  -b 1996 -e 2017 -o index_part2_4
+sudo julia -p 7 fit_smiles_index.jl index_part2_4
+sudo julia -p 7 est_parameters.jl index_part2_4
+sudo rm data/raw_data/opt_data_index_part2_4.csv
+sudo rm data/raw_data/dist_data_index_part2_4.csv
+echo 'Done with group 4/4' >> tracking_file_index.txt
+

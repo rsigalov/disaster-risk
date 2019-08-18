@@ -1,5 +1,5 @@
-""" This is the docstring for rolling_disaster_betas.py. 
-This file uses CRSP monthly data to compute rolling betas with respect to 
+""" This is the docstring for rolling_disaster_betas.py.
+This file uses CRSP monthly data to compute rolling betas with respect to
 several disaster-risk factors.
 
 Authors: Roman Sigalov and Emil Siriwardane
@@ -31,8 +31,8 @@ def RollingOLS_helper(df, betas, window, min_periods):
     r'''
     Helper function to speed up rolling regression
     '''
-        
-    N = len(df)    
+
+    N = len(df)
 
     for t in range(0, N):
         # Drop nans, then check if length of non-nan dataframe is sufficient
@@ -41,39 +41,39 @@ def RollingOLS_helper(df, betas, window, min_periods):
         df_tmp = df_sub[nanidx]
         #non_missing = len(df_tmp)
 
-        
-        if len(df_tmp) < min_periods:      
+
+        if len(df_tmp) < min_periods:
         	# If less than min_periods periods are not NaN
         	# set beta to NaN
             beta = -100
         else:
-            # Creating Y and X arrays 
+            # Creating Y and X arrays
             Y = np.array(df_tmp[:, 0])
-            X = np.hstack((np.ones((len(df_tmp),1)), 
+            X = np.hstack((np.ones((len(df_tmp),1)),
                            np.array(df_tmp[:, 1:])))
-            
+
             params = inv((X.T.dot(X))).dot(X.T).dot(Y)
             beta = params[1:]
-            
+
         # Store betas and idiosyncratic volatilities into array
         betas[t, :] = beta
-                
+
     return betas
 
 def RollingOLS(df, window, min_periods = None):
     r'''
     Function to run rolling regressions. Speed improvements over pandas rolling
-    
+
     Args:
         df: Two-column dataframe where the first column is the y-variable and
             the second column is the x-variable
         window: Integer for the window over which to run rolling regressions
-        min_periods: Integer of the minimum number of periods required 
-        
+        min_periods: Integer of the minimum number of periods required
+
     Returns: Dataframe containing rolling betas
-        
+
     '''
-    
+
     xvars = df.columns[1:]
     index = df.index
 
@@ -82,54 +82,50 @@ def RollingOLS(df, window, min_periods = None):
         min_periods = window
 
     # Arrays to store betas
-    a = -100 * np.ones(np.shape(df[xvars]))      
+    a = -100 * np.ones(np.shape(df[xvars]))
     betas = RollingOLS_helper(df.values, a, window, min_periods)
-    
+
     betas[betas == -100] = np.nan
-    
-    return pd.DataFrame(betas, index = index, 
+
+    return pd.DataFrame(betas, index = index,
                         columns = ['beta_' + x for x in xvars])
-           
-def get_disaster_factors(innovation_method, level_filter = None, 
-                         var_filter = None, day_filter = None,
-                         extrapolation_filter = None):
+
+def get_disaster_factors(innovation_method, level_filter = None,
+                         var_filter = None, day_filter = None):
     r'''
-    Function to get various disaster risk factors and their innovations. 
-    
+    Function to get various disaster risk factors and their innovations.
+
     Args:
-        innovation_method: String for how to compute innovations in disaster 
-                           risk factors. 
-                               'AR' uses an AR1 model 
+        innovation_method: String for how to compute innovations in disaster
+                           risk factors.
+                               'AR' uses an AR1 model
                                'fd' uses first-differences
-        level_filter: List of filters to apply to whether disaster risk comes 
+        level_filter: List of filters to apply to whether disaster risk comes
                       from sp_500 or individual firms (ind)
-        var_filter: List of filters to apply to the disaster risk measure 
+        var_filter: List of filters to apply to the disaster risk measure
                     (D, rn_prob_2sigma, rn_prob_20, rn_prob_40, rb_prob_60)
-        day_filter: List of filters to apply to duration of options that 
+        day_filter: List of filters to apply to duration of options that
                     went into measure (30, 60, 120)
-        extrapolation_filter: whether the extrapolate a measure when smiles
-                    don't straddle X days (Y, N)
-                    
-    
+
     Returns:
         df: Dataframe where index is date and columns are various disaster
             risk factors
         df_innov: Dataframe containing innovations to disaster risk factors
     '''
-    
+
     # == Check inputs == #
     if innovation_method not in ['AR', 'fd']:
         raise ValueError("innovation_method must be either 'AR' or 'fd'")
-    
+
     # == Read in raw data == #
     raw_f = pd.read_csv("estimated_data/disaster_risk_measures/" +\
                         "combined_disaster_df.csv")
     raw_f['date_eom'] = pd.to_datetime(raw_f['date'])
     raw_f.drop('date', axis = 1, inplace = True)
-    
+
     # == Focus only on direct (for S&P 500) and filtered mean aggregation == #
-    raw_f = raw_f[raw_f.agg_type.isin(['direct', 'mean_all'])]
-    
+    raw_f = raw_f[raw_f.agg_type.isin(['direct', 'mean_filter'])]
+
     # == Apply other filters == #
     if level_filter is not None:
         raw_f = raw_f[raw_f['level'].isin(level_filter)]
@@ -137,18 +133,16 @@ def get_disaster_factors(innovation_method, level_filter = None,
         raw_f = raw_f[raw_f['var'].isin(var_filter)]
     if day_filter is not None:
         raw_f = raw_f[raw_f['days'].isin(day_filter)]
-    if extrapolation_filter is not None:
-        raw_f = raw_f[raw_f['extrapolation'].isin(extrapolation_filter)]
-        
+
     # == Create variable names == #
     raw_f['name'] = raw_f['level'] + '_' + raw_f['var'] +\
-                    '_' + raw_f['days'].astype(str) + '_' + raw_f['extrapolation']
-                    
+                    '_' + raw_f['days'].astype(str)
+
     # == Create pivot table, then resample to end of month == #
-    pdf = raw_f.pivot_table(index = 'date_eom', columns = 'name', 
+    pdf = raw_f.pivot_table(index = 'date_eom', columns = 'name',
                             values = 'value')
     pdf = pdf.resample('M').last()
-    
+
     # == Compute innovations in each factor == #
     if innovation_method == 'fd':
         df = pdf.diff()
@@ -158,86 +152,72 @@ def get_disaster_factors(innovation_method, level_filter = None,
             ar = ARX(pdf[col], lags = [1]).fit()
             df.loc[ar.resid.index, col] = ar.resid.values
         df = df.astype(float)
-    
+
     return pdf, df
-        
+
 ##  ----------------------------------------------
 ##  function  ::  main
 ##  ----------------------------------------------
 def main(argv = None):
-    
+
     # == Parameters == #
-    s = time.time()    
+    s = time.time()
     wrds_un = 'ens'     # WRDS username
     imethod = 'fd'      # Innovations to factors using first-differences
-    
+
     # == Establish WRDS connection == #
     # db = wrds.Connection(wrds_username=wrds_un)
     db = wrds.Connection()
-    
+
+    print("Getting CRSP returns")
     # == Get CRSP monthly data, filling in delisted returns == #
     crsp = crsp_comp.get_monthly_returns(db, start_date = '1986-01-01',
                                     end_date = '2017-12-31', balanced = True)
-    
-    # == Read in relevant factors and compute their innovations == #
-    # dis_fac, dis_fac_innov = get_disaster_factors(innovation_method = imethod,
-    #                                               level_filter = [argv[3]],
-    #                                               var_filter = [argv[1]],
-    #                                               day_filter = [float(argv[2])],
-    #                                               extrapolation_filter = ['N'])
 
     # Getting a zoo of factors:
+    print("Getting a zoo of factors")
+    print("")
     dis_fac, dis_fac_innov = get_disaster_factors(innovation_method = imethod,
-                                                  level_filter = ["ind"],
-                                                  var_filter = ["D_clamp", "rn_prob_20", "rn_prob_80"],
-                                                  day_filter = [30,60,90,120,150,180],
-                                                  extrapolation_filter = ['N'])
+                                                  level_filter = ["union_cs"], # Using only OM+CRSP CS definition
+                                                  var_filter = ["D_clamp","rn_prob_20","rn_prob_80"],
+                                                  day_filter = [30,60,90,120,150,180])
 
-    # Adding factors from term structue part:
-    # (1) Explicit level factor:
-    lsc = pd.read_csv("estimated_data/term_structure/lsc_factors.csv")
-    lsc["date_mon"] = pd.to_datetime(lsc["date_mon"])
-    lsc = lsc.set_index("date_mon").diff()
+    print("Loading level factor")
+    print("")
+    # Adding level factor:
+    level = pd.read_csv("estimated_data/interpolated_D/level_disaster_series.csv")
+    level["date_mon"] = pd.to_datetime(level["date_mon"])
+    level = level.rename(columns = {"D_clamp": "level_D_clamp"})
+    level = level.set_index("date_mon").diff()
     dis_fac_innov = pd.merge(
-        dis_fac_innov, lsc[["level"]], left_index = True, right_index = True, how = "left")
-
-    # (2) PC1 from balanced exercise:
-    pc_balanced = pd.read_csv("estimated_data/term_structure/pc_balanced.csv")
-    pc_balanced["date_mon"] = pd.to_datetime(pc_balanced["date_mon"])
-    pc_balanced = pc_balanced.set_index("date_mon").diff().rename(columns={"PC1":"PC1_balanced"})
-    dis_fac_innov = pd.merge(
-        dis_fac_innov, pc_balanced[["PC1_balanced"]], left_index = True, right_index = True, how = "left")
-
-    # (3) PC1 from unbalanced exerciseL
-    pc_unbalanced = pd.read_csv("estimated_data/term_structure/pc_unbalanced.csv")
-    pc_unbalanced["date_mon"] = pd.to_datetime(pc_unbalanced["date_mon"])
-    pc_unbalanced = pc_unbalanced.set_index("date_mon").diff().rename(columns={"PC1":"PC1_unbalanced"})
-    dis_fac_innov = pd.merge(
-        dis_fac_innov, pc_unbalanced[["PC1_unbalanced"]], left_index = True, right_index = True, how = "left")
+        dis_fac_innov, level[["level_D_clamp"]], left_index = True, right_index = True, how = "left")
 
     # == Merge returns with factor innovations == #
     crsp_with_fac = pd.merge(crsp, dis_fac_innov,
                              left_on = ['date_eom'],
                              right_index = True,
                              how = 'left')
-    
+
+    print("Computing betas with respect to all factors")
+    print("")
     # == Compute betas with respect to innovations in each factor == #
-    for f in dis_fac_innov.columns:
+    for i, f in enumerate(dis_fac_innov.columns):
+        print("Factor %d out of %d"%(i+1, len(dis_fac_innov.columns)))
         beta_f = crsp_with_fac.groupby('permno')['ret', f].\
                     apply(RollingOLS, 24, 18)
         crsp_with_fac = crsp_with_fac.join(beta_f)
-        
+
     # == Output permno-date-betas == #
     output_df = crsp_with_fac[['permno', 'date_eom'] + \
                               ['beta_' + x for x in dis_fac_innov.columns]]
+
     output_df.to_csv('estimated_data/disaster_risk_betas/' +\
                      'disaster_risk_betas.csv', index = False)
     print('Computed betas with respect to disaster risk factors ' +\
           'in %.2f minutes' %((time.time() - s) / 60))
-    
+
 ##  -----------------------------------------------------------------------
 ##                             main program
 ##  -----------------------------------------------------------------------
 
 if __name__ == "__main__": sys.exit(main(sys.argv))
-            

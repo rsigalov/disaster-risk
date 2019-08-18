@@ -694,8 +694,6 @@ def load_FF():
     r''' 
         Gets 5 Fama-French factors directly from Ken French's website
 
-        Args:
-
         Returns:
             ff: dataframe with 5 Fama-French factors and date as index.
                 Returns are already divided by a hundred (originally)
@@ -734,12 +732,16 @@ def load_FF():
     return ff
 
 
-def load_and_filter_ind_disaster(days, min_obs_in_month, min_share_month):
+def load_and_filter_ind_disaster(days, min_obs_in_month, min_share_month, suffix = None):
+    
     ########################################################################
     # Loading interpolated measures according to the specified number of days
     # of interpolation
+    if suffix is None:
+        file_name = "estimated_data/interpolated_D/int_ind_disaster_days_" + str(days) + ".csv"
+    else:
+        file_name = "estimated_data/interpolated_D/int_ind_disaster_" + suffix + "_days_" + str(days) + ".csv"
     
-    file_name = "estimated_data/interpolated_D/int_ind_disaster_days_" + str(days) + ".csv"
     D_df = pd.read_csv(file_name)
     
     # Dealing with dates:

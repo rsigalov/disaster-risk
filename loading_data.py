@@ -106,7 +106,7 @@ def main(argv = None):
 
     query = """
     select
-        secid, ex_date, amount, distr_type
+        secid, payment_date, amount, distr_type
     from OPTIONM.DISTRD
     where secid in _secid_list_
     and currency = 'USD'

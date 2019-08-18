@@ -1,4 +1,6 @@
-
+"""
+Comparing disaster sorted portfolios with 5x5 BM and OP FF sorted portfolios
+"""
 
 
 from functools import reduce
@@ -49,11 +51,3 @@ reduce(lambda df1, df2: pd.merge(df1,df2,left_index=True,right_index=True), res)
 
 
 comp_ew.corr().loc["vw_diff_ind"].sort_values()
-
-
-
-
-
-
-
-

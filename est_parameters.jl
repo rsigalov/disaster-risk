@@ -62,17 +62,16 @@ df_out = DataFrame(
               secid = svi_data.secid,
               date = svi_data.obs_date,
               T = T_arr,
-              V = map(x -> x[1], ests),
-              IV = map(x -> x[2], ests),
-              V_in_sample = map(x -> x[3], ests),
-              IV_in_sample = map(x -> x[4], ests),
-              V_clamp = map(x -> x[5], ests),
-              IV_clamp = map(x -> x[6], ests),
-              rn_prob_2sigma = map(x -> x[7], ests),
-              rn_prob_20ann = map(x -> x[8], ests),
-              rn_prob_40ann = map(x -> x[9], ests),
-              rn_prob_60ann = map(x -> x[10], ests),
-              rn_prob_80ann = map(x -> x[11], ests)
+              V_in_sample = map(x -> x[1], ests),
+              IV_in_sample = map(x -> x[2], ests),
+              V_clamp = map(x -> x[3], ests),
+              IV_clamp = map(x -> x[4], ests),
+              rn_prob_sigma = map(x -> x[5], ests),
+              rn_prob_2sigma = map(x -> x[6], ests),
+              rn_prob_20 = map(x -> x[7], ests),
+              rn_prob_40 = map(x -> x[8], ests),
+              rn_prob_60 = map(x -> x[9], ests),
+              rn_prob_80 = map(x -> x[10], ests)
             )
 
 CSV.write(string("data/output/var_ests_", index_to_append, ".csv"), df_out)

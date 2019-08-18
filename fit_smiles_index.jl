@@ -95,8 +95,14 @@ for subdf in groupby(df[1:df_limit, :], [:secid, :date, :exdate])
 
         int_rate = interp_rate(opt_days_maturity - 1)/100
 
-        div_yield_cur = div_yield[(div_yield.date .== obs_date) .&
-                                  (div_yield.secid .== secid), :rate][1]/100
+
+        div_yield_sub = div_yield[(div_yield.date .== obs_date) .&
+                                  (div_yield.secid .== secid), :rate]
+        if size(div_yield_sub)[1] == 0
+            div_yield_cur = 0
+        else
+            div_yield_cur = div_yield_sub[1]/100
+        end
 
         forward = exp(-div_yield_cur*T)*spot/exp(-int_rate*T)
 

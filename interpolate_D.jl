@@ -30,6 +30,7 @@ for i in 1:length(file_list)
         global df = CSV.read(string(dir_path, file_list[i]); datarow = 2, delim = ",")
     else
         df_append = CSV.read(string(dir_path, file_list[i]); datarow = 2, delim = ",")
+        # global df = vcat(df, df_append)
         append!(df, df_append)
     end
 end
@@ -48,7 +49,7 @@ for i in 1:length(file_list)
         global df_rn_prob = CSV.read(string(dir_path, file_list[i]); datarow = 2, delim = ",")
     else
         df_append = CSV.read(string(dir_path, file_list[i]); datarow = 2, delim = ",")
-        append!(df_rn_prob, df_append)
+        global df_append = vcat(df_append, df_append)
     end
 end
 
@@ -98,10 +99,33 @@ df_grouped = groupby(df, [:secid, :date])
 print("\n--- First Pass ----\n")
 @time tmp = map(x -> calculate_D(x, :D_clamp, days), [i for i in df_grouped][1:2])
 print("\n--- Second Pass ----\n")
+@profile var_arr = map(x -> calculate_D(x, :D_clamp, days), [i for i in df_grouped[1:1000]])
 
 # First interpolate previosuly calculated variables: D's and adjusted risk
 # neutral probabilities
 var_list = [:D, :D_in_sample, :D_clamp, :rn_prob_2sigma_ann, :rn_prob_20ann, :rn_prob_40ann]
+
+@time var_arr = map(x -> calculate_D(x, :D_clamp, days), [i for i in df_grouped[1:100]])
+
+df_grouped = groupby(
+    df[.!(isequal.(df[:D_clamp], NaN) .| isequal.(df[:D_clamp], Inf)  .| isequal.(df[:D_clamp], missing)),[:secid,:date,:T,:D_clamp]],
+    [:secid, :date])
+
+var_arr = Array{Tuple{Int, Date, Float64}}(undef, 10000)
+i = 0
+secid_arr = zeros(10000)
+date_arr = zeros(10000)
+D_arr = zeros(10000)
+@time for sub_df in df_grouped[1:10000]
+    global i += 1
+    var_arr[i] = calculate_D(sub_df, :D_clamp, days)
+end
+
+# What if I pass the vectors instead of sub_df
+
+
+
+
 
 for j in 1:length(var_list)
     var = var_list[j]

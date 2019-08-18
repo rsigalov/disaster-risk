@@ -14,10 +14,10 @@ import os
 from matplotlib import pyplot as plt
 from functools import reduce
 from stargazer.stargazer import Stargazer
-
+os.chdir("/Users/rsigalov/Documents/PhD/disaster-risk-revision/")
 import crsp_comp
 
-os.chdir("/Users/rsigalov/Documents/PhD/disaster-risk-revision/")
+
 
 
 
@@ -746,6 +746,269 @@ if value_weighted:
 else:
     disaster_ret_quants_df["strategy_ret"] = disaster_ret_quants_df["ret"] * disaster_ret_quants_df["action"]
     strategy_ret = disaster_ret_quants_df.groupby("month_lead")["strategy_ret"].mean()
+
+
+
+
+
+
+
+
+
+
+
+df_port_ext = pd.read_csv("estimated_data/disaster_sorts/port_sort_agg_ret_extrapolation.csv").rename(columns = {"Unnamed: 0":"date"})
+df_port = pd.read_csv("estimated_data/disaster_sorts/port_sort_agg_ret.csv").rename(columns = {"Unnamed: 0":"date"})
+
+df_port_ext["ext"]="Y"
+df_port["ext"]="N"
+
+df_port = df_port.append(df_port_ext)
+
+df_port["ew_diff"] = df_port["ew_1"] - df_port["ew_5"]
+df_port["vw_diff"] = df_port["vw_1"] - df_port["vw_5"]
+
+pd.pivot_table(df_port[["date","variable", "days", "ext", "vw_diff", "ew_diff"]],
+               columns = ["variable", "days", "ext"], index = "date").corr()
+
+
+########################################################################
+# Looking at Emil's disaster measure:
+emil_d = pd.read_csv("emils_D.csv")
+emil_d["Date"] = pd.to_datetime(emil_d["Date"], infer_datetime_format=True) + pd.offsets.MonthEnd(0)
+emil_d = emil_d.set_index("Date").diff()
+crsp = crsp_comp.get_monthly_returns(db, start_date = '1986-01-01',
+                                    end_date = '2017-12-31', balanced = True)
+crsp_with_fac = pd.merge(crsp, emil_d,
+                             left_on = ['date_eom'],
+                             right_index = True,
+                             how = 'left')
+
+for f in emil_d.columns:
+    beta_f = crsp_with_fac.groupby('permno')['ret', f].\
+                    apply(rolling_disaster_betas.RollingOLS, 24, 18)
+    crsp_with_fac = crsp_with_fac.join(beta_f)
+
+roll_betas = crsp_with_fac[["permno", "date_eom","beta_D"]].rename(columns = {"date_eom": "date"})
+roll_betas = roll_betas[(roll_betas.date >= "1997-07-31") & (roll_betas.date <= "2015-11-30")]
+ports = crsp_comp.monthly_portfolio_sorts(db, roll_betas, ["beta_D"], 5)
+
+emil_sort_ret = ports["beta_D"]["ret"]
+emil_sort_ret["ew_diff"] = emil_sort_ret["ew_1"] - emil_sort_ret["ew_5"]
+emil_sort_ret["vw_diff"] = emil_sort_ret["vw_1"] - emil_sort_ret["vw_5"]
+
+ff = crsp_comp.load_FF()
+
+emil_sort_ret = pd.merge(emil_sort_ret, ff, left_index = True, right_index = True)
+
+reg_var = "vw_diff"
+smf.ols(formula = reg_var + " ~ 1", data = emil_sort_ret * 12).fit().summary()
+smf.ols(formula = reg_var + " ~ MKT", data = emil_sort_ret * 12).fit().summary()
+smf.ols(formula = reg_var + " ~ MKT + SMB + HML", data = emil_sort_ret * 12).fit().summary()
+smf.ols(formula = reg_var + " ~ MKT + SMB + HML + CMA", data = emil_sort_ret * 12).fit().summary()
+smf.ols(formula = reg_var + " ~ MKT + SMB + HML + CMA + RMW", data = emil_sort_ret * 12).fit().summary()              
+
+# Claculating correlations between Emil's measure and new measures:
+emil_d = pd.read_csv("emils_D.csv")
+emil_d["Date"] = pd.to_datetime(emil_d["Date"], infer_datetime_format=True) + pd.offsets.MonthEnd(0)
+emil_d = emil_d.set_index("Date")
+disaster_df_comb = pd.read_csv("estimated_data/disaster_risk_measures/combined_disaster_df.csv")
+disaster_df_comb = disaster_df_comb[(disaster_df_comb.level == "ind") &
+                                    (disaster_df_comb["var"] == "D_clamp") &
+                                    (disaster_df_comb.days == 30) & 
+                                    (disaster_df_comb.agg_type == "mean_filter") &
+                                    (disaster_df_comb.extrapolation == "N")][["date", "value"]].set_index("date")
+
+comp_df = pd.merge(emil_d, disaster_df_comb, left_index = True, right_index = True)
+for i_col in range(comp_df.shape[1]):
+    x = np.array(comp_df.iloc[:,i_col])
+    comp_df.iloc[:,i_col] = x/np.nanstd(x)
+    
+comp_df.plot(figsize = (10,7))   
+comp_df.corr()    
+comp_df.diff().corr()    
+
+
+
+
+
+# Number of companies with eligible secids:
+df = pd.read_csv("estimated_data/interpolated_D/int_ind_disaster_days_30.csv")
+df["date"] = pd.to_datetime(df["date"])
+df["date_mon"] = df["date"] + pd.offsets.MonthEnd(0)
+df = df[["date_mon", "secid", "D_clamp"]].dropna()
+df_cnt1 = df.groupby(["date_mon", "secid"])["D_clamp"].count().rename("cnt").reset_index()
+#df_cnt1[(df_cnt1.cnt >= 5) & (df_cnt1.date_mon >= "1996-01-01")].groupby("date_mon")["secid"].count().head(12)
+
+
+f = open("check_num_smiles.sql", "r") 
+query = f.read()
+year = 1996
+min_options = 5
+min_smiles_in_month = 5
+
+query = query.replace("_data_base_", "OPTIONM.OPPRCD" + str(year))
+query = query.replace("_start_date_", "'" + str(year) + "-01-01'")
+query = query.replace("_end_date_", "'" + str(year) + "-12-31'")
+query = query.replace("_min_options_", str(min_options))
+query = query.replace("_min_smiles_per_month_", str(min_smiles_in_month))
+query = query.replace('\n', ' ').replace('\t', ' ')
+# Running query on WRDS
+df = db.raw_sql(query)
+
+df_raw_sql = df[(df.cnt >= 5) & (df.mon == 2)]
+df_my_data = df_cnt1[(df_cnt1.cnt >= 5) & (df_cnt1.date_mon == "1996-04-30")]
+missing_secid = df_raw_sql[~df_raw_sql.secid.isin(df_my_data["secid"])]
+
+
+
+pd.merge(missing_secid, df_issue_type, on = "secid")
+
+
+
+
+
+
+df_secid = pd.read_csv("data/output/var_ests_num_smiles_test.csv")
+df_secid["date"] = pd.to_datetime(df_secid["date"])
+df_secid["date_mon"] = df_secid["date"]+pd.offsets.MonthEnd(0)
+df_secid = df_secid[df_secid.date_mon == "1996-01-31"]
+df_secid = df_secid[["date","T","V_clamp"]].dropna()
+df_secid["below"] = df_secid["T"] <= 29/365
+df_secid.groupby("date").below.sum().sum()
+
+query = """
+select *
+from OPTIONM.SECNMD
+where secid = 5002
+"""
+query = query.replace('\n', ' ').replace('\t', ' ')
+df_tmp = db.raw_sql(query)
+
+
+
+###############################################################################
+# Looking at how many companies are there in the overall data but not in mine
+###############################################################################
+# Loading data with count of options:
+df_raw_sql = pd.read_csv("tracking_number_of_secids_1.csv")
+df_raw_sql = df_raw_sql.append(pd.read_csv("tracking_number_of_secids_2.csv"))
+df_raw_sql = df_raw_sql.append(pd.read_csv("tracking_number_of_secids_3.csv"))
+df_raw_sql = df_raw_sql.append(pd.read_csv("tracking_number_of_secids_4.csv"))
+df_raw_sql["year"] = df_raw_sql["year"].astype(int).astype(str)
+df_raw_sql["mon"] = df_raw_sql["mon"].astype(int).astype(str)
+df_raw_sql["date"] = df_raw_sql["year"] + "-" + df_raw_sql["mon"]+ "-" + "1"
+df_raw_sql["date"] = pd.to_datetime(df_raw_sql["date"]) + pd.offsets.MonthEnd(0)
+df_raw_sql.drop(columns = ["year", "mon"], inplace = True)
+
+# Linking to class of issuance on OptionMetrics
+query = """
+select secid, cusip, issue_type, index_flag
+from OPTIONM.SECURD
+"""
+query = query.replace('\n', ' ').replace('\t', ' ')
+df_issue_type = db.raw_sql(query)
+df_raw_sql = pd.merge(df_raw_sql, df_issue_type, on = "secid", how = "left")
+
+# Merging with my data to see where is the difference:
+df_int = pd.read_csv("estimated_data/interpolated_D/int_ind_disaster_days_30.csv")
+df_int["date"] = pd.to_datetime(df_int["date"])
+df_int["date_mon"] = df_int["date"] + pd.offsets.MonthEnd(0)
+df_int = df_int[["date_mon", "secid", "D_clamp"]].dropna()
+df_cnt = df_int.groupby(["date_mon", "secid"])["D_clamp"].count().rename("cnt").reset_index()
+df_compare = pd.merge(df_raw_sql, 
+                      df_cnt.rename(columns = {"cnt":"my_cnt","date_mon":"date"}),
+                      on = ["date","secid"], how = "left")
+
+df_compare[df_compare.my_cnt.isnull() & 
+           (df_compare.index_flag == "0") &
+           (df_compare.issue_type == "0")].groupby("secid")["date"].count().sort_values(ascending = False)
+
+df_compare[df_compare.my_cnt.isnull()].to_csv("not_estimated_secid.csv", index = False)
+
+# Merging with CRSP data through ncusip
+query = """
+select 
+    cusip, ncusip, namedt, nameendt, shrcd, exchcd, ticker
+from crsp.msenames
+"""
+query = query.replace('\n', ' ').replace('\t', ' ')
+df_crsp_cusip = db.raw_sql(query, date_cols = ["namedt", "nameendt"])
+df_raw_sql = pd.merge(df_raw_sql, df_crsp_cusip.drop(columns = "cusip"), 
+                      left_on = "cusip", right_on = "ncusip", how = "left")
+
+# There are 44 unmatched (index_flag == 1) SECIDs with (issue_type == None)
+not_matched = df_raw_sql[df_raw_sql.shrcd.isnull()]
+df_raw_sql = df_raw_sql[(df_raw_sql.date >= df_raw_sql.namedt) & 
+                        (df_raw_sql.date <= df_raw_sql.nameendt)]
+
+# Using only (index_flag == 0) SECIDs and determining SECIDs that are not 
+# in my data:
+df_raw_non_index = df_raw_sql[
+        (df_raw_sql.date >= df_raw_sql.namedt) &
+        (df_raw_sql.date <= df_raw_sql.nameendt) &
+        (df_raw_sql.index_flag == "0")]
+
+
+
+
+
+
+
+# Check for duplicates => there are no duplicates
+np.sum(df_compare.groupby(["secid", "date"])["cnt"].count() > 1)
+
+# Looking at missing data
+# 1. Look at how many companies do I miss that should've been there. There are only
+# a handful of them
+df_compare[df_compare.my_cnt.isnull() & (df_compare.issue_type == "0") & (df_compare.cnt >= 5)]
+
+# 2. Next caculating how many observations are missed because the issue_type field
+# is None:
+df_compare[df_compare.my_cnt.isnull() & df_compare.issue_type.isnull() & (df_compare.cnt >= 5)]
+
+# Filling in types:
+classified = df_compare[df_compare.issue_type.notnull()]
+unclassified = df_compare[df_compare.issue_type.isnull()]
+classified["type"] = classified["issue_type"]
+unclassified["type"] = np.where(
+        unclassified["issue_type"].isnull() & unclassified["shrcd"].isin([10,11]) & unclassified["exchcd"].isin([1,2,3]), 
+        "Common Share CRSP", "Other")
+df_compare = classified.append(unclassified)
+
+# Showing how much other secids will be added:
+pd.pivot_table(df_compare.groupby(["date", "index_flag", "type"])["secid"].count().reset_index(),
+               index = "date", columns = ["index_flag","type"])
+
+# 3. How many of these companies are actually normal companies as inferred by SHRCD=11
+# EXCHANGE NUMBER IN [1,2,3] => MOST OF THEM ARE
+
+
+
+missing_actual_cs = df_compare[
+        df_compare.my_cnt.isnull() & df_compare.issue_type.isnull() & 
+        df_compare.shrcd.isin([10,11]) & (df_compare.cnt >= 5) &
+        (df_compare.exchcd.isin([1,2,3]))]
+
+# 4. Plotting the number of potential additional observations:
+missing_actual_cs.groupby("date")["secid"].count().rename("add")
+
+# 5. How much do I gain when I add it to my companies:
+add_exist = pd.merge(missing_actual_cs.groupby("date")["secid"].count().rename("add"),
+         df_cnt[df_cnt.cnt >= 5].groupby("date_mon")["secid"].count().rename("exist"),
+         left_index = True, right_index = True)[["exist","add"]]
+add_exist["share"] = add_exist["add"]/add_exist["exist"]
+add_exist.share.plot()
+add_exist.plot.area()
+
+############################################################
+# How many companies of each issue-type are there
+############################################################
+
+
+
+
+
 
 
 

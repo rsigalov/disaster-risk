@@ -26,6 +26,8 @@ df["date_next_mon"] = df["date_mon"] + pd.offsets.MonthEnd(1)
 df["date_following_mon"] = df["date_mon"] + pd.offsets.MonthEnd(2)
 df["exdate_mon"] = df["exdate"] + pd.offsets.MonthEnd(0)
 
+# Getting the next trading day as available in OptionMetrics to
+# calculate returns later on
 next_trading_day = pd.DataFrame({"date": np.unique(df.sort_values("date")["date"])})
 next_trading_day["date_next"] = next_trading_day["date"].shift(-1)
 
@@ -172,7 +174,7 @@ df_full = df_full.drop("date_y", axis = 1).rename({"date_x":"date"}, axis = 1)
 
 # Function that takes a sub-df that contains two options that correspond to
 # a straddle and caluclates the y position in the long straddle to make
-# the strategy gamma or vega neutral (produces two scalars)
+# the strategy gamma or vega neutral
 def calculate_jump_vol_ret(sub_df):
     # Calculating gamma and vega for each of the straddles. Since both 
     # gamma and vega are the the same for puts and calls of the same
@@ -276,34 +278,73 @@ jump_vol_ret = pd.merge(jump_vol_ret, next_trading_day, left_index = True,
 jump_vol_ret.drop("date", axis = 1, inplace = True)
 jump_vol_ret.rename({"date_next": "date"}, axis = 1, inplace = True)
 jump_vol_ret.set_index("date", inplace = True)
-####################################################################################
-# Analyzing JUMP and VOL factors:
 
-# Descriptive statistics for the whole sample
-sum_stats_full = jump_vol_ret[["ret_zero_gamma", "ret_zero_vega", "ret_short_straddle", "ret_long_straddle"]].describe()
+##########################################################################
+# Making a table with summary stats on zero-vega (JUMP factor) returns:
+sum_stats_full = jump_vol_ret[["ret_zero_vega"]].describe()
 sum_stats_full = sum_stats_full.loc[["mean", "std"]]
-sum_stats_full.loc["mean"] = (sum_stats_full.loc["mean"]+1)**252-1
+sum_stats_full.loc["mean"] = sum_stats_full.loc["mean"]*252
 sum_stats_full.loc["std"] = sum_stats_full.loc["std"] * np.sqrt(252)
-sum_stats_full
 
-# Descriptive statistics for the earlier sample
-sum_stats_short = jump_vol_ret[jump_vol_ret.index <= "2011-12-31"][["ret_zero_gamma", "ret_zero_vega", "ret_short_straddle", "ret_long_straddle"]].describe()
+sum_stats_short = jump_vol_ret[jump_vol_ret.index <= "2011-12-31"][["ret_zero_vega"]].describe()
 sum_stats_short = sum_stats_short.loc[["mean", "std"]]
-sum_stats_short.loc["mean"] = (sum_stats_short.loc["mean"]+1)**252-1
+sum_stats_short.loc["mean"] = sum_stats_short.loc["mean"]*252
 sum_stats_short.loc["std"] = sum_stats_short.loc["std"] * np.sqrt(252)
-sum_stats_short
 
-# Correlations:
-jump_vol_ret[["ret_zero_gamma", "ret_zero_vega", "ret_short_straddle", "ret_long_straddle"]].corr()
-jump_vol_ret[jump_vol_ret.index <= "2011-12-31"][["ret_zero_gamma", "ret_zero_vega", "ret_short_straddle", "ret_long_straddle"]].corr()
+sum_stats = pd.concat([sum_stats_full, sum_stats_short], axis = 1)
+sum_stats.columns = ["full", "short"]
+sum_stats.loc["sharpe"] = sum_stats.loc["mean"]/sum_stats.loc["std"]
 
-# Plotting cumulative returns for different periods:
-(jump_vol_ret[["ret_zero_vega", "ret_zero_gamma"]]+1).cumprod().plot()
-(jump_vol_ret[(jump_vol_ret.index >= "2000-01-01") & (jump_vol_ret.index <= "2006-12-31")][["ret_zero_vega", "ret_zero_gamma"]]+1).cumprod().plot()
-(jump_vol_ret[(jump_vol_ret.index >= "2007-01-01") & (jump_vol_ret.index <= "2011-12-31")][["ret_zero_vega", "ret_zero_gamma"]]+1).cumprod().plot()
+char_list = ["Mean", "SD", "Sharpe"]
+path = "estimated_data/cremers/jump_sum_stats.tex"
+f = open(path, "w")
+f.write("\\begin{tabular}{lcc}\n")
+f.write("\\toprule \n")
+f.write("Sample: & Full & Thru Dec-11  \\\\ \n")
+f.write("\hline \\\\[-1.8ex] \n")
+for i_row in range(sum_stats.shape[0]):
+    vars_to_write = [char_list[i_row]] + list(sum_stats.iloc[i_row])
+    f.write("{} & {:.3f} & {:.3f} \\\\ \\\\[-1.8ex]\n".format(*vars_to_write))
+    
+f.write("\\bottomrule \n")
+f.write("\end{tabular} \n")  
+f.close()
+
+##########################################################################
+# Table with correlation
 
 
-plt.scatter(jump_vol_ret.y_zero_gamma, jump_vol_ret.y_zero_vega)
+
+##########################################################################
+# Making a table with correlations of JUMP with disaster risk series:
+
+# Using daily data from SPX options to calculate daily correlations:
+df_sp_daily = pd.read_csv("estimated_data/disaster-risk-series/spx_OM_daily_disaster.csv")
+df_sp_daily = pd.melt(df_sp_daily, id_vars = ["date", "days"])
+
+measure_list = ["D_clamp",  "rn_prob_5", "rn_prob_10", "rn_prob_15", "rn_prob_20"]
+
+days_list = [30, 60, 120, 180]
+corr_agg_daily_df = pd.DataFrame(columns = ["measure", "days", "corr"])
+
+for days in days_list:
+    for measure in measure_list:
+        # Subsetting disaster series:
+        D = df_sp_daily[(df_sp_daily.variable == measure) & (df_sp_daily.days == days)].set_index("date")["value"].diff()
+        
+        # Merging with Cremers' JUMP:
+        D = pd.merge(D, jump_vol_ret[["ret_zero_vega"]], left_index = True, right_index = True)
+
+        # Calculating and writing correlation:
+        corr_agg_daily_df = corr_agg_daily_df.append(
+                pd.DataFrame({"measure": [measure], 
+                              "days": [days], 
+                              "corr": [D.corr().loc["value", "ret_zero_vega"]]}))
+
+
+corr_daily_stats = pd.pivot_table(corr_agg_daily_df, index = "measure", columns = "days", values = "corr")
+corr_daily_stats = corr_daily_stats.rename({"rn_prob_5":"rn_prob_05"}, axis = 0)
+corr_daily_stats = corr_daily_stats.sort_index()
 
 ####################################################################################
 # Saving Cremers et al factors:
@@ -320,10 +361,9 @@ cremers_factors = cremers_factors[["JUMP"]]
 df_sp_daily = pd.read_csv("estimated_data/disaster-risk-series/spx_OM_daily_disaster.csv")
 df_sp_daily = pd.melt(df_sp_daily, id_vars = ["date", "days"])
 
-measure_list = ["D_in_sample","D_clamp", "rn_prob_2sigma", "rn_prob_5",
+measure_list = ["D_clamp", "rn_prob_5",
                 "rn_prob_10", "rn_prob_15", "rn_prob_20"]
-#measure_list = ["D_in_sample", "rn_prob_2sigma", "rn_prob_5",
-#                "rn_prob_10", "rn_prob_15", "rn_prob_20"]
+
 days_list = [30, 60, 120, 180]
 corr_agg_daily_df = pd.DataFrame(columns = ["measure", "days", "corr"])
 
@@ -334,34 +374,45 @@ for days in days_list:
         
         # Merging with Cremers' JUMP:
         D = pd.merge(D, cremers_factors, left_index = True, right_index = True)
-#        D = pd.merge(D, 
-#                     df_sp_daily[(df_sp_daily.variable == "D_clamp") & (df_sp_daily.days == 30)].set_index("date").rename({"value":"D_clamp"}, axis = 1)["D_clamp"].diff(),
-#                     left_index = True, right_index = True)
 
         # Calculating and writing correlation:
         corr_agg_daily_df = corr_agg_daily_df.append(
                 pd.DataFrame({"measure": [measure], 
                               "days": [days], 
                               "corr": [D.corr().loc["value", "JUMP"]]}))
-#        corr_agg_daily_df = corr_agg_daily_df.append(
-#                pd.DataFrame({"measure": [measure], 
-#                              "days": [days], 
-#                              "corr": [D.corr().loc["value", "D_clamp"]]}))
 
-pd.pivot_table(corr_agg_daily_df, index = "measure", columns = "days", values = "corr")
+
+corr_daily_stats = pd.pivot_table(corr_agg_daily_df, index = "measure", columns = "days", values = "corr")
+corr_daily_stats = corr_daily_stats.rename({"rn_prob_5":"rn_prob_05"}, axis = 0)
+corr_daily_stats = corr_daily_stats.sort_index()
+
+################################################################
+# Calculating correlation of D with P(r<-X) for different x
+df_sp_daily = pd.read_csv("estimated_data/disaster-risk-series/spx_OM_daily_disaster.csv")
+df_sp_daily = pd.melt(df_sp_daily, id_vars = ["date", "days"])
+df_sp_daily = df_sp_daily[
+        ((df_sp_daily.variable == "D_clamp") & (df_sp_daily.days == 30)) | 
+        (df_sp_daily.variable.isin(["rn_prob_5", "rn_prob_10", "rn_prob_15", "rn_prob_20"]) & (df_sp_daily.days.isin([30, 60,120,180])))]
+
+corr_df_1 = pd.pivot_table(df_sp_daily, index = "date", columns = ["variable", "days"], values = "value").diff().corr()
+corr_df_1 = pd.pivot_table(corr_df_1.loc[("D_clamp",30)].reset_index(), index = "variable", columns = "days")
+corr_df_1 = corr_df_1[corr_df_1.index != "D_clamp"]
+corr_df_1.rename({"rn_prob_5":"rn_prob_05"}, inplace = True)
+corr_df_1.sort_index(inplace = True)
+
+corr_df_2 = corr_daily_stats[corr_daily_stats.index != "D_clamp"]
 
 ######################################################################################
 # Comparing with disaster measure derived from SPX options on monthly level
 cremers_factors["date_mon"] = cremers_factors.index + pd.offsets.MonthEnd(0)
 cremers_factors_mon = cremers_factors.copy().set_index("date_mon")
-cremers_factors_mon = (cremers_factors_mon+1).groupby("date_mon").prod()-1
+cremers_factors_mon = (cremers_factors_mon + 1).groupby("date_mon").prod() - 1
 cremers_factors_mon = cremers_factors_mon["JUMP"]
 
 df_sp_mon = pd.read_csv("estimated_data/disaster-risk-series/spx_OM_monthly_disaster.csv")
 df_sp_mon = pd.melt(df_sp_mon, id_vars = ["date", "days"])
 
-measure_list = ["D_in_sample","D_clamp", "rn_prob_2sigma", "rn_prob_5",
-                "rn_prob_10", "rn_prob_15", "rn_prob_20"]
+measure_list = ["D_clamp", "rn_prob_5", "rn_prob_10", "rn_prob_15", "rn_prob_20"]
 days_list = [30, 60, 120, 180]
 corr_agg_mon_df = pd.DataFrame(columns = ["measure", "days", "corr"])
 
@@ -379,15 +430,17 @@ for days in days_list:
                               "days": [days], 
                               "corr": [D.corr().loc["value", "JUMP"]]}))
 
-pd.pivot_table(corr_agg_mon_df, index = "measure", columns = "days", values = "corr")
+corr_mon_stats = pd.pivot_table(corr_agg_mon_df, index = "measure", columns = "days", values = "corr")
+corr_mon_stats = corr_mon_stats.rename({"rn_prob_5":"rn_prob_05"}, axis = 0)
+corr_mon_stats = corr_mon_stats.sort_index()
+
 
 ######################################################################################
 # Comparing with disaster measure derived from individual options on monthly level
 df_D = pd.read_csv("estimated_data/disaster-risk-series/combined_disaster_df.csv")
-df_D = df_D[(df_D.level == "ind") & (df_D.agg_type == "mean_all")]
+df_D = df_D[(df_D.level == "union_cs") & (df_D.agg_type == "mean_filter")]
 
-measure_list = ["D_in_sample","D_clamp", "rn_prob_2sigma", "rn_prob_20",
-                "rn_prob_40", "rn_prob_60", "rn_prob_80"]
+measure_list = ["D_clamp", "rn_prob_20", "rn_prob_40", "rn_prob_60", "rn_prob_80"]
 days_list = [30, 60, 120, 180]
 
 corr_ind_mon_df = pd.DataFrame(columns = ["measure", "days", "corr"])
@@ -406,20 +459,143 @@ for days in days_list:
                               "days": [days], 
                               "corr": [D.corr().loc["value", "JUMP"]]}))
 
-pd.pivot_table(corr_ind_mon_df, index = "measure", columns = "days", values = "corr")
 
-# Printing output:
-print("")
-print(" ---- Daily correlation of JUMP and D based on S&P options ---- ")
-print("")
-print(pd.pivot_table(corr_agg_daily_df, index = "measure", columns = "days", values = "corr"))
-print("")
-print(" ---- Monthly correlation of JUMP and D based on S&P options ---- ")
-print("")
-print(pd.pivot_table(corr_agg_mon_df, index = "measure", columns = "days", values = "corr"))
-print("")
-print(" ---- Monthly correlation of JUMP and D based on individual options ---- ")
-print("")
-print(pd.pivot_table(corr_ind_mon_df, index = "measure", columns = "days", values = "corr"))
-print("")
+corr_mon_ind_stats = pd.pivot_table(corr_ind_mon_df, index = "measure", columns = "days", values = "corr")
+corr_mon_ind_stats = corr_mon_ind_stats.rename({"rn_prob_5":"rn_prob_05"}, axis = 0)
+corr_mon_ind_stats = corr_mon_ind_stats.sort_index()
+
+
+
+row_name_list = ["$P(r < -5\%)$", "$P(r < -10\%)$", "$P(r < -15\%)$", "$P(r < -20\%)$"]
+path = "estimated_data/cremers/comp_daily_corr.tex"
+f = open(path, "w")
+f.write("\\begin{tabular}{lcccc}\n")
+
+f.write("\\multicolumn{4}{l}{\\textbf{30 day clamped $\\mathbb{D}$}}  \\\\ \\\\[-1.8ex]\n")
+f.write("\\hline \\\\[-1.8ex] \n")
+f.write("days: & 30 & 60 & 120 & 180 \\\\ \\\\[-1.8ex]\n")
+f.write("\hline \\\\[-1.8ex] \n")
+for i_row in range(corr_df_1.shape[0]):
+    vars_to_write = [row_name_list[i_row]] + list(corr_df_1.iloc[i_row])
+    f.write("{} & {:.3f} & {:.3f} & {:.3f} & {:.3f} \\\\ \\\\[-1.8ex]\n".format(*vars_to_write))
+f.write("\\bottomrule \n\\\\[-1.2ex]")
+
+f.write("\\multicolumn{4}{l}{\\textbf{JUMP}} \\\\ \\\\[-1.8ex]\n")
+f.write("\\hline \\\\[-1.8ex]\n")
+f.write("days: & 30 & 60 & 120 & 180\\\\ \\\\[-1.8ex]\n")
+f.write("\hline \\\\[-1.8ex] \n")
+for i_row in range(corr_df_2.shape[0]):
+    vars_to_write = [row_name_list[i_row]] + list(corr_df_2.iloc[i_row])
+    f.write("{} & {:.3f} & {:.3f} & {:.3f} & {:.3f} \\\\ \\\\[-1.8ex]\n".format(*vars_to_write))
+f.write("\\bottomrule \n")
+
+f.write("\end{tabular} \n")  
+f.close()
+
+
+
+############################################################################
+# Saving output to Latex tables:
+#row_name_list = ["clamped $\\mathbb{D}$", "$P(r < -5\%)$", "$P(r < -10\%)$", "$P(r < -15\%)$", "$P(r < -20\%)$"]
+#path = "estimated_data/cremers/jump_daily_corr.tex"
+#f = open(path, "w")
+#f.write("\\begin{tabular}{lcccc}\n")
+#f.write("\\toprule \n")
+#f.write("days: & 30 & 60 & 120 & 180\\\\ \n")
+#f.write("\hline \\\\[-1.8ex] \n")
+#for i_row in range(corr_daily_stats.shape[0]):
+#    vars_to_write = [row_name_list[i_row]] + list(corr_daily_stats.iloc[i_row])
+#    f.write("{} & {:.3f} & {:.3f} & {:.3f} & {:.3f} \\\\ \\\\[-1.8ex]\n".format(*vars_to_write))
+#    
+#f.write("\\bottomrule \n")
+#f.write("\end{tabular} \n")  
+#f.close()
+#
+#
+#row_name_list = ["clamped $\\mathbb{D}$", "$P(r < -5\%)$", "$P(r < -10\%)$", "$P(r < -15\%)$", "$P(r < -20\%)$"]
+#path = "estimated_data/cremers/jump_mon_corr.tex"
+#f = open(path, "w")
+#f.write("\\begin{tabular}{lcccc}\n")
+#f.write("\\toprule \n")
+#f.write("days: & 30 & 60 & 120 & 180\\\\ \n")
+#f.write("\hline \\\\[-1.8ex] \n")
+#for i_row in range(corr_mon_stats.shape[0]):
+#    vars_to_write = [row_name_list[i_row]] + list(corr_mon_stats.iloc[i_row])
+#    f.write("{} & {:.3f} & {:.3f} & {:.3f} & {:.3f} \\\\ \\\\[-1.8ex]\n".format(*vars_to_write))
+#    
+#f.write("\\bottomrule \n")
+#f.write("\end{tabular} \n")  
+#f.close()
+#
+#
+#corr_mon_daily = pd.concat([corr_daily_stats, corr_mon_stats], axis = 1)
+#row_name_list = ["clamped $\\mathbb{D}$", "$P(r < -5\%)$", "$P(r < -10\%)$", "$P(r < -15\%)$", "$P(r < -20\%)$"]
+#path = "estimated_data/cremers/jump_daily_mon_corr.tex"
+#f = open(path, "w")
+#f.write("\\begin{tabular}{lcccc|cccc}\n")
+#f.write("\\toprule \n")
+#f.write(" & \\multicolumn{4}{c}{Daily Frequency} & \\multicolumn{4}{c}{Monthly Frequency} \\\\ \\\\[-1.8ex]\n")
+#f.write("\cline{2-9} \\\\[-1.8ex] \n")
+#f.write("days: & 30 & 60 & 120 & 180 & 30 & 60 & 120 & 180\\\\ \n")
+#f.write("\hline \\\\[-1.8ex] \n")
+#for i_row in range(corr_mon_daily.shape[0]):
+#    vars_to_write = [row_name_list[i_row]] + list(corr_mon_daily.iloc[i_row])
+#    f.write("{} & {:.3f} & {:.3f} & {:.3f} & {:.3f} & {:.3f}  & {:.3f}  & {:.3f}  & {:.3f}  \\\\ \\\\[-1.8ex]\n".format(*vars_to_write))
+#    
+#f.write("\\bottomrule \n")
+#f.write("\end{tabular} \n")  
+#f.close()
+#
+#
+#row_name_list = ["clamped $\\mathbb{D}$", "$P(r < -20\%)$", "$P(r < -40\%)$", "$P(r < -60\%)$", "$P(r < -80\%)$"]
+#path = "estimated_data/cremers/jump_mon_ind_corr.tex"
+#f = open(path, "w")
+#f.write("\\begin{tabular}{lcccc}\n")
+#f.write("\\toprule \n")
+#f.write("days: & 30 & 60 & 120 & 180\\\\ \n")
+#f.write("\hline \\\\[-1.8ex] \n")
+#for i_row in range(corr_mon_ind_stats.shape[0]):
+#    vars_to_write = [row_name_list[i_row]] + list(corr_mon_ind_stats.iloc[i_row])
+#    f.write("{} & {:.3f} & {:.3f} & {:.3f} & {:.3f} \\\\ \\\\[-1.8ex]\n".format(*vars_to_write))
+#    
+#f.write("\\bottomrule \n")
+#f.write("\end{tabular} \n")  
+#f.close()
+#
+#
+#row_name_list = ["$P(r < -5\%)$", "$P(r < -10\%)$", "$P(r < -15\%)$", "$P(r < -20\%)$"]
+#path = "estimated_data/cremers/comp_daily_corr.tex"
+#f = open(path, "w")
+#f.write("\\begin{tabular}{lcccc}\n")
+#f.write("\\multicolumn{5}{l}{\\textbf{Correlation of JUMP with other measures}}")
+#f.write("\\toprule \n")
+#f.write("days: & 30 & 60 & 120 & 180\\\\ \n")
+#f.write("\hline \\\\[-1.8ex] \n")
+#for i_row in range(corr_df_1.shape[0]):
+#    vars_to_write = [row_name_list[i_row]] + list(corr_df_1.iloc[i_row])
+#    f.write("{} & {:.3f} & {:.3f} & {:.3f} & {:.3f} \\\\ \\\\[-1.8ex]\n".format(*vars_to_write))
+#f.write("\\bottomrule \n\\\\[-1.2ex]")
+#
+#f.write("\\multicolumn{5}{l}{\\textbf{Correlation of 30 day clamped $\\mathbb{D}$ with other measures}}")
+#f.write("\\toprule \n")
+#f.write("days: & 30 & 60 & 120 & 180\\\\ \n")
+#f.write("\hline \\\\[-1.8ex] \n")
+#for i_row in range(corr_df_2.shape[0]):
+#    vars_to_write = [row_name_list[i_row]] + list(corr_df_2.iloc[i_row])
+#    f.write("{} & {:.3f} & {:.3f} & {:.3f} & {:.3f} \\\\ \\\\[-1.8ex]\n".format(*vars_to_write))
+#f.write("\\bottomrule \n")
+#f.write("\end{tabular} \n")  
+#f.close()
+
+
+
+
+
+
+
+
+
+
+
+
 

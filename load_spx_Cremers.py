@@ -1,7 +1,18 @@
 """
 This scripts loads raw option data for SPX from OptionMetrics, dividend yield
 and interest rates and prepares it to construct a factor from Cremers et al.
+Need to have a separate file for that since Cremers et al. factor requires
+having both ITM and OTM options and we originally load only OTM options for
+liquidity reasons.
+
+Requires:
+    load_options_spx_cremers.sql: SQL query for downloading option data
+    with standard filters used throughout the paper.
+    
+Outputs:
+    data/raw_data/opt_data_spx_OM_ITM_OTM.csv: file with 
 """
+
 import numpy as np
 import pandas as pd
 from pandasql import sqldf # for accessing pandas with SQL queries
@@ -22,8 +33,6 @@ import wrds
 db = wrds.Connection(wrds_username = "rsigalov")
 
 pd.set_option('display.max_columns', None)
-
-
 
 secid = 108105
 year_start = 1996
@@ -132,18 +141,4 @@ df_prices = df_prices[((df_prices["price"] >= df_prices["call_min_price"]) & (df
                       ((df_prices["price"] >= df_prices["put_min_price"]) & (df_prices.cp_flag == "P"))]
 
 df_prices.to_csv("data/raw_data/opt_data_spx_OM_ITM_OTM.csv", index = False)
-
-
-
-
-
-query = "select distinct ticker, mgmt_cd, et_flag, inst_fund, retail_fund, open_to_inv from FUND_SUMMARY2"
-mf = db.raw_sql(query)
-mf
-
-
-
-
-
-
 

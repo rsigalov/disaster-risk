@@ -1,6 +1,7 @@
 """
 Analysis of term structure of disaster risk
 """
+
 # Libraries to execute the script from terminal
 from __future__ import print_function
 from __future__ import division
@@ -275,6 +276,55 @@ def estimate_regs_on_factor(df, factors, daily = False):
     return R2_agg_list, res_df_to_return
 
 
+def estimate_regs_on_factor_separate(df, factors, daily = False):
+    num_factors = factors.shape[1]
+
+    # Normalizing the variables in the data frame:
+    for i_col in range(df.shape[1]):
+        x = np.array(df.iloc[:,i_col])
+        df.iloc[:, i_col] = (x - np.nanmean(x))/np.nanstd(x)
+
+    # Estimating the regression of each series on the first principal
+    # component. From that we can calculate residuals and calculate
+    # the overall R^2 which will say what is the share of explained
+    # variance by the first PC.
+    merge_column = "date_mon"
+
+    if daily:
+        merge_column = "date"
+
+    reg_df = pd.merge(df, factors, left_index = True, right_index = True)
+
+    # Estimate regressions on factor 1, on factor 2, and so on...
+    results_list = [] # list with regression results
+    index_list = [] # list with indices of form (secid, m, num_factors)
+    for i_col in range(df.shape[1]):
+        for i_factors in range(num_factors):
+            index_list.append(df.columns[i_col] + (i_factors+1, ))
+            Y = df.iloc[:,i_col].rename("Y")
+            X = factors.iloc[:, i_factors]
+            
+            # Merging left-hand variable on factors to have the same
+            # time periods
+            reg_df = pd.merge(Y, X, left_index = True, right_index = True)
+            Y = np.array(reg_df.iloc[:, 0])
+            X = np.array(reg_df.iloc[:, 1])
+            X = sm.add_constant(X)
+            res = sm.OLS(Y, X, missing = "drop").fit()
+            results_list.append(res)
+
+    # Returing statistics on regressions in a dataframe:
+    res_df_to_return = pd.DataFrame({
+            "m": [x[0] for x in index_list],
+            "secid": [x[1] for x in index_list],
+            "pc_num": [x[2] for x in index_list],
+            "loading": [x.params[1] for x in results_list],
+            "R2": [x.rsquared for x in results_list],
+            "N": [x.nobs for x in results_list]})
+
+    return res_df_to_return
+
+
 def pc_weights_sum_stats(w, norm_factor_list = None):
     '''
     The input should be a dataframe with multiindex where the first level
@@ -362,7 +412,6 @@ for days in [30, 60, 90, 120, 150, 180]:
     int_d_tmp["m"] = days
     int_d = int_d.append(int_d_tmp)
 
-
 # Filtering observations to have the full term structure
 int_d_var = filter_full_term_structure(int_d)
 int_d_var["date"] = pd.to_datetime(int_d_var["date"])
@@ -393,7 +442,7 @@ int_d_var = pd.merge(mean_cnt_df, int_d_var, on = ["secid", "date_mon"], how = "
 int_d_mon_mat = int_d_var.groupby(["secid", "date_mon", "m"])[VARIABLE].mean().reset_index()
 
 # Saving the average monthly term structure:
-int_d_mon_mat.to_csv("estimated_data/interpolated_D/average_term_structure.csv", index = False)
+#int_d_mon_mat.to_csv("estimated_data/interpolated_D/average_term_structure.csv", index = False)
 
 ############################################################################
 # Constructing unbalanced PCs
@@ -426,14 +475,35 @@ pc_unbalance.to_csv("estimated_data/term_structure/pc_unbalanced.csv")
 ############################################################################
 # Constructing balance PCs
 ############################################################################
-df_pivot_balance = pivot_data_min_share(
-        int_d_mon_mat[int_d_mon_mat.date_mon >= "2003-01-01"], 0.8)
+#df_pivot_balance = pivot_data_min_share(
+#        int_d_mon_mat[int_d_mon_mat.date_mon >= "2003-01-01"], 0.8)
+
+df_pivot_balance = pivot_data_min_share(int_d_mon_mat, 0.7)
 
 w_balance, pc_balance, exp_var_balanced = construct_pcs(
         df_pivot_balance, num_pcs = 3, method = "balanced_fill")
 
 # Calculating regressions of secids on unbalanced PCs:
 R2_balance, reg_balance = estimate_regs_on_factor(df_pivot_balance, pc_balance)
+
+# Looking at violin plots:
+fig, ax = plt.subplots(figsize=(6, 5))
+ax = sns.boxplot(
+        x = "m", y = "W1",  palette="muted",
+        data = w_balance.reset_index())
+ax.set_xlabel("Maturity (days)")
+ax.set_ylabel("")
+plt.tight_layout()
+plt.savefig("SS_figures/balance_PCA_PC1_loadings_distribution.pdf")
+
+fig, ax = plt.subplots(figsize=(6, 5))
+ax = sns.boxplot(
+        x = "m", y = "W2",  palette="muted",
+        data = w_balance.reset_index())
+ax.set_xlabel("Maturity (days)")
+ax.set_ylabel("")
+plt.tight_layout()
+plt.savefig("SS_figures/balance_PCA_PC2_loadings_distribution.pdf")
 
 # Statistics on weights for unbalanced PCs:
 w_sum_stats_balance = pc_weights_sum_stats(w_balance, norm_factor_list = [1000,1000,1000])
@@ -467,6 +537,47 @@ lsc_factors = construct_lsc_factors_monthly(df_to_calc_lsc)
 
 # Calculating regressions of secids on LSC factors:
 R2_lsc, reg_lsc = estimate_regs_on_factor(df_pivot_unbalance, lsc_factors)
+
+# Running separate regressions on 
+lsc_separate_regs = estimate_regs_on_factor_separate(df_pivot_unbalance, lsc_factors)
+
+# Looking at loading for separate regressions:
+lsc_separate_regs[lsc_separate_regs.pc_num == 1].groupby("m")["loading"].describe().T
+lsc_separate_regs[lsc_separate_regs.pc_num == 2].groupby("m")["loading"].describe().T
+
+# Making a violin plot for distribution of loadings:
+fig, ax = plt.subplots(figsize=(8, 5))
+ax = sns.boxplot(
+        x = "m", y = "loading", hue = "pc_num", palette="muted",
+        data = lsc_separate_regs[lsc_separate_regs.pc_num.isin([1,2])])
+ax.set_xlabel("Maturity (days)")
+ax.set_ylabel("")
+plt.tight_layout()
+plt.savefig("SS_figures/lsc_loadings_distribution_combined.pdf")
+
+fig, ax = plt.subplots(figsize=(6, 5))
+ax = sns.boxplot(
+        x = "m", y = "loading", palette="muted",
+        data = lsc_separate_regs[lsc_separate_regs.pc_num == 1])
+ax.set_xlabel("Maturity (days)")
+ax.set_ylabel("")
+plt.tight_layout()
+plt.savefig("SS_figures/level_loadings_distribution.pdf")
+
+fig, ax = plt.subplots(figsize=(6, 5))
+ax = sns.boxplot(
+        x = "m", y = "loading", palette="muted",
+        data = lsc_separate_regs[lsc_separate_regs.pc_num == 2])
+ax.set_xlabel("Maturity (days)")
+ax.set_ylabel("")
+plt.tight_layout()
+plt.savefig("SS_figures/slope_loadings_distribution.pdf")
+
+
+
+
+
+
 
 # Generating tables with summary statistics on R squared:
 tables_to_sum = pd.pivot_table(reg_lsc[reg_lsc["N"] >= 10*12].drop("N", axis = 1), columns = "pc_num", index = ["m", "secid"])
@@ -602,11 +713,12 @@ table_to_sum_list = [
         w_unbalance,
         w_unbalance_daily]
 
-level_list = ["Individual"] + [""]*5 + ["SPX",""]
-type_list = ["Balanced","(post 02)"] + ["Unbalanced",""] + ["Unbalanced", "Daily"] + ["Monthly", "Daily"]
+level_list = ["Individual", "Options"] + [""]*4 + ["SPX","Options"]
+type_list = ["Balanced","(post 02)"] + ["Unbalanced",""] + ["Unbalanced", "(Daily)"] + ["Monthly", "Daily"]
 stat_list = ["Mean","Median"]*3 + ["Actual"]*2
 
-path = "estimated_data/term_structure/w_all_sum_stats_comb.tex"
+#path = "estimated_data/term_structure/w_all_sum_stats_comb.tex"
+path = "SS_tables/term_structure_weights.tex"
 
 f = open(path, "w")
 f.write("\\begin{tabular}{lllcccccc}\n")
@@ -614,7 +726,7 @@ f.write("\\begin{tabular}{lllcccccc}\n")
 
 i_pc = 0
 
-for i_pc in range(3):
+for i_pc in range(2):
     sum_stats_agg_ind = [(x*1000).reset_index().groupby("m")["W"+str(i_pc+1)].describe().T.loc[["mean","50%"]] for x in table_to_sum_list]
     sum_stats_agg_ind = reduce(lambda df1, df2: df1.append(df2), sum_stats_agg_ind)
     sum_stats_agg = sum_stats_agg_ind.append(w_sp_mon.reset_index().set_index("m")["W"+str(i_pc+1)].T)
@@ -708,6 +820,76 @@ for i_row in range(sum_stats_agg.shape[0]):
 f.write("\\bottomrule \n")
 f.write("\end{tabular} \n")
 f.close()
+
+
+################################################################
+# Short and transposed version of this table for the paper
+################################################################
+table_list = [
+        reg_balance,
+        reg_unbalance,
+        reg_lsc,
+        reg_unbalance_daily,
+        reg_mon_sp,
+        reg_daily_sp]
+
+r2_agg_list = [
+    R2_balance,
+    R2_unbalance,
+    R2_lsc,
+    R2_unbalance_daily,
+    R2_mon_sp,
+    R2_daily_sp]
+
+
+
+
+level_list = ["Individual", "Options"]  + [""]*10 + ["SPX", "Options"] + [""]*4
+type_list = ["Balanced","(post 02)",""] + ["Unbalanced","",""] + ["Unbalaced", "(Daily)",""] + ["LSC","",""] + ["Monthly","",""] + ["Daily","",""]
+#stat_list = ["PC1", "PC1+2", "PC1+2+3"]*3 + ["L", "L+S", "L+S+C"] + ["PC1", "PC1+2", "PC1+2+3"]*2
+stat_list = ["1", "2", "3"]*6
+row_num_list = ["(" + str(x+1) + ")" for x in range(len(level_list))]
+
+# For each regression results table take mean and median of R^2 distribution
+sum_stats_agg = [x.groupby("pc_num").R2.describe().T.loc[["mean", "50%"]] for x in table_list]
+
+# For each table appending the corresponding aggregated R^2:
+for i in range(len(sum_stats_agg)):
+    df_to_append = pd.DataFrame({1: [r2_agg_list[i][0]], 2: [r2_agg_list[i][1]], 3: [r2_agg_list[i][2]]})
+    sum_stats_agg[i] = sum_stats_agg[i].append(df_to_append)
+    
+sum_stats_agg = [x.T for x in sum_stats_agg]
+sum_stats_agg = reduce(lambda df1, df2: df1.append(df2), sum_stats_agg)
+sum_stats_agg = sum_stats_agg*100
+
+# Converting to percent:
+path = "SS_tables/term_structure_r2.tex"
+f = open(path, "w")
+f.write("\\begin{tabular}{lllccc}\n")
+f.write("\\toprule \n")
+f.write(" &  & Factors & \multicolumn{3}{c}{$R^2$} \\\\ \n")
+f.write("\\cline{4-6} \n")
+f.write("  & & Included & Mean & Median & Aggregated \\\\ \n")
+f.write("\hline \\\\[-1.8ex] \n")
+
+for i_row in range(sum_stats_agg.shape[0]):
+    vars_to_write = [level_list[i_row], type_list[i_row], stat_list[i_row]]
+    vars_to_write = vars_to_write + list(sum_stats_agg.iloc[i_row])
+
+    if i_row in [2,5,8,14]:
+        f.write("{} & {} & {} & {:.1f} & {:.1f} & {:.1f} \\\\ \\\\[-1.8ex]\n".format(*vars_to_write))
+        f.write("\\cline{2-6} \\\\[-1.8ex] \n")
+    elif i_row == 11:
+        f.write("{} & {} & {} & {:.1f} & {:.1f} & {:.1f} \\\\ \\\\[-1.8ex]\n".format(*vars_to_write))
+        f.write("\hline \\\\[-1.8ex] \n")
+    else:
+        f.write("{} & {} & {} & {:.1f} & {:.1f} & {:.1f} \\\\\n".format(*vars_to_write))
+
+f.write("\\bottomrule \n")
+f.write("\end{tabular} \n")
+f.close()
+
+
 
 
 

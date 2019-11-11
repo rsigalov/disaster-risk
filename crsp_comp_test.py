@@ -16,13 +16,26 @@ from pandas.tseries.offsets import *
 from io import BytesIO
 from zipfile import ZipFile
 from urllib.request import urlopen
+from ast import literal_eval
 
 import crsp_comp
 
 
 def main(argv=None):
 	# Testing loading 25 BM/OP portfolios:
-	df1, df2 = crsp_comp.load_BM_OP_25_portfolios()
+	# df1, df2 = crsp_comp.load_BM_OP_25_portfolios()
+	# crsp_comp.load_ff_12_industry()
+
+	port = pd.read_csv("estimated_data/disaster_sorts/port_sort_const_agg.csv",
+		index_col = [0,1])
+	port = port.reset_index()
+	port.form_date = pd.to_datetime(port.form_date)
+
+	db = wrds.Connection()
+	port = crsp_comp.get_ff_ind(db, port)
+	print(port.head())
+
+
 
 
 

@@ -613,7 +613,7 @@ def olsnw(y, X, constant=True, lags=None):
     w = 1 - arange(0,lags+1)/(lags+1)       
     w[0] = 0.5
 
-    s2 = dot(gamma,2*w)
+    s2 = dot(gamma, 2*w)
     
     # Covariance of parameters
     Xe = mat(zeros(shape(X)))

@@ -2,6 +2,10 @@
 
 This code is written in two languages: Python 3.5 and Julia 1.0. Python is used for loading data from WRDS server using their SQL-Python library and for less computationally demanding pieces, though some of these take some time to run. Julia scripts are written to use in parallel and are used for more computationally demanding exercises: fitting Stochastic Volatility Inspired smiles into implied volatilities reported by OptionMetrics and for numerical integration. Distributed over 3 AWS machines each using 8 cores and having 32GB RAM, the Julia part of the code runs for approximately 100 hours.
 
+The high level of the workflow is presented in the Figure below. A more detailed description of main scripts follows
+
+![Disaster Risk Workflow](Disaster Risk Workflow.png)
+
 ## Scripts Used to Generate Disaster Measures
 
 ### Individual Options

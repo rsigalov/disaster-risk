@@ -4,7 +4,7 @@ This code is written in two languages: Python 3.5 and Julia 1.0. Python is used 
 
 The high level of the workflow is presented in the Figure below. A more detailed description of main scripts follows
 
-![Disaster Risk Workflow](Disaster Risk Workflow.png)
+![Disaster Risk Workflow](disaster_risk_workflow.png)
 
 ## Scripts Used to Generate Disaster Measures
 

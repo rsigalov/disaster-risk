@@ -18,7 +18,6 @@ from functools import reduce
 import os
 os.chdir("/Users/rsigalov/Documents/PhD/disaster-risk-revision/")
 
-
 def mean_with_truncation(x):
     return np.mean(x[(x <= np.quantile(x, 0.99)) & (x >= np.quantile(x, 0.01))])
     
@@ -77,6 +76,13 @@ def main(argv = None):
     for days in [30, 60, 90, 120, 150, 180]:
         print(days)
         int_d_to_append = pd.read_csv("estimated_data/interpolated_D/int_ind_disaster_union_cs_" + str(days) + ".csv")
+        int_d_to_append = int_d_to_append[["secid", "date", "D_clamp", "rn_prob_20", "rn_prob_80"]]
+        int_d_to_append["days"] = days
+        int_d = int_d.append(int_d_to_append)
+
+    for days in [30, 60, 90, 120, 150, 180]:
+        print(days)
+        int_d_to_append = pd.read_csv("estimated_data/interpolated_D/int_ind_disaster_new_release_days_" + str(days) + ".csv")
         int_d_to_append = int_d_to_append[["secid", "date", "D_clamp", "rn_prob_20", "rn_prob_80"]]
         int_d_to_append["days"] = days
         int_d = int_d.append(int_d_to_append)

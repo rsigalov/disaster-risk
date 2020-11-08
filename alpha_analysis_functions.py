@@ -222,7 +222,9 @@ def plot_capm_betas(factor_model_output, path_to_save = None):
     else:
     	plt.savefig(path_to_save, bbox_inches='tight', format = 'pdf')
 
-# Function from Matplotlib website that sets prettier colors:
+# Function from 
+#   https://scipy-cookbook.readthedocs.io/items/Matplotlib_ColormapTransformations.html
+# that sets prettier colors:
 def cmap_map(function, cmap):
     """ Applies function (which should operate on vectors of shape 3: [r, g, b]), on colormap cmap.
     This routine will break any discontinuous points in a colormap.

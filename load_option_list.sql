@@ -1,4 +1,4 @@
-    with security_table as (
+with security_table as (
     select
         secid, date, close as under_price
     from optionm.SECPRD

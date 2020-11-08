@@ -84,7 +84,7 @@ def main(argv=None):
 	constituents_df_list = []
 
 	# First do the portfolios for measures separated by days:
-	db = wrds.Connection()
+	# db = wrds.Connection()
 
 	for days in days_list:
 		print("Doing portfolios sorts on %d days variable" % days)

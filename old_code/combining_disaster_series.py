@@ -91,8 +91,6 @@ def main(argv = None):
     spx_CME = spx_CME.sort_values(["date", "days"])
     spx_CME.to_csv("estimated_data/disaster-risk-series/spx_CME_daily_disaster.csv", index = False)
 
-
-
     # Averaging both of them on monthly level:
     def aggregate_at_monthly_level(spx):
         spx["date"] = pd.to_datetime(spx["date"])

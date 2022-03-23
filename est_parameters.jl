@@ -1,5 +1,10 @@
 using Distributed
 
+@everywhere using Pkg
+@everywhere Pkg.activate("DRjulia")
+
+using Distributed
+
 print("\nNumber of processors ")
 print(nprocs())
 print("\n")
@@ -22,8 +27,21 @@ index_to_append = ARGS[1]
 
 print("\n--- Loading Data ----\n")
 
-svi_data = CSV.read(string("data/raw_data/svi_params_", index_to_append, ".csv"); datarow = 2, delim = ",")
+svi_filepath = string("data/raw_data/svi_params_", index_to_append, ".csv")
+svi_data = DataFrame(CSV.File(svi_filepath))
+
+
 svi_data = svi_data[svi_data.opt_out .== "FTOL_REACHED", :]
+
+####################################################################################################
+# There is one observation that raises an error, remove it for now manually. Deal with it later
+# secid: 110472, obs_date = 2021-05-27, exp_date = 2021-06-04
+function filter_func(secid, obs_date, exp_date)::Bool
+	!((secid == 110472) && (obs_date == Date("2021-05-27")) && (exp_date == Date("2021-06-04")))
+end
+
+svi_data = filter([:secid, :obs_date, :exp_date] => filter_func, svi_data)
+####################################################################################################
 
 num_options = size(svi_data)[1]
 
@@ -75,3 +93,61 @@ df_out = DataFrame(
             )
 
 CSV.write(string("data/output/var_ests_", index_to_append, ".csv"), df_out)
+
+
+# for irow in 1:size(svi_data)[1]
+# 	@show irow
+# 	row = svi_data[irow,:];
+# 	estimate_parameters(
+# 		row[:spot],
+# 		row[:r],
+# 		row[:F],
+# 		row[:T],
+# 		row[:sigma_NTM],
+# 		row[:min_K],
+# 		row[:max_K],
+# 		svi_arr[irow]);
+# end
+
+
+# # row 23467. secid: 110472, obs_date = 2021-05-27, exp_date = 2021-06-04
+# irow = 23467
+# row = svi_data[irow,:];
+# params = estimate_parameters(
+# 	row[:spot],
+# 	row[:r],
+# 	row[:F],
+# 	row[:T],
+# 	row[:sigma_NTM],
+# 	row[:min_K],
+# 	row[:max_K],
+# 	svi_arr[irow]);
+
+
+# spot = row[:spot]
+# r = row[:r]
+# F = row[:F]
+# T = row[:T]
+# interp_params = svi_arr[irow]
+# min_K = row[:min_K]
+# max_K = row[:max_K]
+
+# calc_option_value_put = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K, "Put")
+# calc_option_value_call = K -> calc_option_value(spot, r, F, T, interp_params, K, min_K, max_K, "Call")
+
+# IV1_raw = K -> calc_option_value_call(K)/K^2
+# IV1 = t -> IV1_raw(spot + t/(1-t))/(1-t)^2
+
+# IV2_raw = K -> calc_option_value_put(K)/K^2
+# IV2 = t -> IV2_raw(spot * t) * spot
+
+# # integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, 0, 1, maxevals = 100000)[1] + hquadrature(IV2, 0, 1, maxevals = 100000)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
+# hquadrature(IV2, 0.1, 1, maxevals = 100000)[1]
+
+# trange = 0.01:0.001:1.0;
+# IV2_arr = zeros(length(trange));
+# for i in 1:length(trange)
+# 	IV2_arr[i] = IV2(trange[i])
+# end
+
+# Plots.plot(IV2_arr)

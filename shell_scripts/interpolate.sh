@@ -1,0 +1,11 @@
+time python interpolate_D.py 60 1 spx var_ests_spx.csv
+time python interpolate_D.py 90 1 spx var_ests_spx.csv
+time python interpolate_D.py 120 1 spx var_ests_spx.csv
+time python interpolate_D.py 150 1 spx var_ests_spx.csv
+time python interpolate_D.py 180 1 spx var_ests_spx.csv
+
+time python interpolate_D.py 60 0 individual var_ests_final_part var_ests_new_release_part var_ests_missing_part var_ests_march_2021_update_part var_ests_march_2022_update_part
+time python interpolate_D.py 90 0 individual var_ests_final_part var_ests_new_release_part var_ests_missing_part var_ests_march_2021_update_part var_ests_march_2022_update_part
+time python interpolate_D.py 120 0 individual var_ests_final_part var_ests_new_release_part var_ests_missing_part var_ests_march_2021_update_part var_ests_march_2022_update_part
+time python interpolate_D.py 150 0 individual var_ests_final_part var_ests_new_release_part var_ests_missing_part var_ests_march_2021_update_part var_ests_march_2022_update_part
+time python interpolate_D.py 180 0 individual var_ests_final_part var_ests_new_release_part var_ests_missing_part var_ests_march_2021_update_part var_ests_march_2022_update_part

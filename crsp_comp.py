@@ -17,9 +17,10 @@ from __future__ import division
 import sys
 import numpy as np
 import pandas as pd
-import wrds
+# import wrds # Replaced WRDS module with a plain PostgreSQL module psycopg2
 import datetime
 import time
+import psycopg2
 import os
 from os.path import isfile, join
 pd.options.display.max_columns = 20
@@ -34,6 +35,24 @@ from urllib.request import urlopen
 ##  -----------------------------------------------------------------------
 ##                               functions
 ##  -----------------------------------------------------------------------
+
+
+def connectToWRDS():
+	# Setting up the connection to load CRSP and Compustat data (if was not loaded previously)
+	with open("account_data/wrds_user.txt") as f:
+		wrds_username = f.readline()
+
+	with open("account_data/wrds_pass.txt") as f:
+		wrds_password = f.readline()
+
+	conn = psycopg2.connect(
+		host="wrds-pgdata.wharton.upenn.edu",
+		port = 9737,
+		database="wrds",
+		user=wrds_username,
+		password=wrds_password)
+
+	return conn
 
 def wavg(group, avg_name, weight_name):
     d = group[avg_name]
@@ -96,18 +115,17 @@ def compute_value_weights(p_df, scols):
 
     return p_df
 
-def get_weekly_returns(db, start_date, end_date):
+def get_weekly_returns(conn, start_date, end_date, load_override=False):
     r'''
-
+        Same as get_monthly_returns but loads weekly returns
     '''
 
     # Checking if the right CRSP file is in the working directory
     # and if it is simply load it without the need to go to WRDS:
-    all_files = [f for f in os.listdir() if os.path.isfile(f)]
-    name_crsp = "crsp_week_ret.csv"
+    all_files = [f for f in os.listdir("data")]
 
-    if name_crsp in  all_files:
-        df = pd.read_csv(name_crsp)
+    if ("crsp_week_ret.csv" in  all_files) and not load_override:
+        df = pd.read_csv("data/crsp_week_ret.csv")
         # Convert all date columns to a proper format
         df["date"] = pd.to_datetime(df["date"])
         return df
@@ -124,8 +142,8 @@ def get_weekly_returns(db, start_date, end_date):
                 date_trunc('week', a.date)::date as date_week,
                 log(1+a.ret) as log_ret,
                 abs(a.prc * a.shrout) as mktcap
-            from crspa.dsf as a 
-                join crspa.dsenames c on a.permno = c.permno 
+            from crsp.dsf as a 
+                join crsp.dsenames c on a.permno = c.permno 
             where a.ret is not null and prc is not null and 
                 a.date >= c.namedt and a.date <= c.nameendt and 
                 date >= '%s' and date <= '%s' and
@@ -158,7 +176,7 @@ def get_weekly_returns(db, start_date, end_date):
             
         """ % (sd, ed)
         query = query.replace("\t", " ").replace("\n", " ")
-        crspm_raw = db.raw_sql(query)
+        crspm_raw  = pd.read_sql_query(query, conn)
         crspm_raw["date"] = pd.to_datetime(crspm_raw["date"])
 
         # == For PERMCO-DATES with multiple PERMNOs, aggregate market cap and
@@ -177,10 +195,10 @@ def get_weekly_returns(db, start_date, end_date):
             date_trunc('week', dlstdt)::date as dlstdt,
             permno, dlstcd, 
             case when dlret is null and dlstcd >= 400 and dlstcd <= 591 then -0.3 else dlret end as dlret
-        from crspa.dsedelist
+        from crsp.dsedelist
         """
         query = query.replace("\t", " ").replace("\n", " ")
-        delist = db.raw_sql(query)
+        delist = pd.read_sql_query(query, conn)
         delist["dlstdt"] = pd.to_datetime(delist["dlstdt"])
 
         # Merge delisted returns with CRSP
@@ -202,12 +220,12 @@ def get_weekly_returns(db, start_date, end_date):
         crspm_raw.drop(labels = ['ret_gross','dlret_gross','dlstdt','dlret', 'ret'], axis = 1, inplace = True)
         crspm_raw.rename(columns = {'ret_adj': 'ret'}, inplace = True)
 
-        crspm_raw.to_csv("crsp_week_ret.csv", index = False)
+        crspm_raw.to_csv("data/crsp_week_ret.csv", index = False)
 
         return crspm_raw
 
 
-def get_monthly_returns(db, start_date, end_date, balanced = True):
+def get_monthly_returns(conn, start_date, end_date, balanced = True, load_override=False):
     r'''
     Function to download monthly returns from CRSP and then compute delisted
     returns following Shumway (1997). Observations are at the PERMNO-month
@@ -215,7 +233,7 @@ def get_monthly_returns(db, start_date, end_date, balanced = True):
     available on that date.
 
     Args:
-        db: Database connection using wrds module
+        conn: Database connection using wrds module
         start_date: String of start date for returns. Default to minimum
         end_date: String of end date for returns. Default to maximum
         balanced: Boolean indicating whether to balance the panel for each
@@ -227,11 +245,10 @@ def get_monthly_returns(db, start_date, end_date, balanced = True):
 
     # Checking if the right CRSP file is in the working directory
     # and if it is simply load it without the need to go to WRDS:
-    all_files = [f for f in os.listdir() if os.path.isfile(f)]
-    name_crsp = "crsp_ret.csv"
+    all_files = [f for f in os.listdir("data")]
 
-    if name_crsp in  all_files:
-        df = pd.read_csv(name_crsp)
+    if ("crsp_ret.csv" in all_files) and not load_override:
+        df = pd.read_csv("data/crsp_ret.csv")
         # Convert all date columns to a proper format
         df["date"] = pd.to_datetime(df["date"])
         df["date_eom"] = pd.to_datetime(df["date_eom"])
@@ -242,18 +259,19 @@ def get_monthly_returns(db, start_date, end_date, balanced = True):
         ed = pd.to_datetime(end_date).strftime('%Y-%m-%d')
 
         # == Download CRSP Monthly == #
-        crspm_raw = db.raw_sql("select a.cusip, a.permno, a.permco, a.date, " +\
-                          "a.ret, a.retx, a.prc, a.shrout," +\
-                          "abs(a.prc * a.shrout) as mktcap, " +\
-                          "extract(MONTH from a.date) as m, " +\
-                          "extract(YEAR from a.date) as y " +\
-                          "from crsp.msf as a " +\
-                          "join crsp.dsenames c " +\
-                          "on a.permno = c.permno " +\
-                          "where a.ret is not null and prc is not null and " +\
-                          "a.date >= c.namedt and a.date <= c.nameendt and " +\
-                          "date >= '%s' and date <= '%s' and " %(sd, ed) +\
-                          "c.shrcd in (10, 11) and c.exchcd in (1, 2, 3)")
+        query = "select a.cusip, a.permno, a.permco, a.date, " +\
+                "a.ret, a.retx, a.prc, a.shrout, c.hsiccd, " +\
+                "abs(a.prc * a.shrout) as mktcap, " +\
+                "extract(MONTH from a.date) as m, " +\
+                "extract(YEAR from a.date) as y " +\
+                "from crsp.msf as a " +\
+                "join crsp.dsenames c " +\
+                "on a.permno = c.permno " +\
+                "where a.ret is not null and prc is not null and " +\
+                "a.date >= c.namedt and a.date <= c.nameendt and " +\
+                "date >= '%s' and date <= '%s' and " %(sd, ed) +\
+                "c.shrcd in (10, 11) and c.exchcd in (1, 2, 3)"
+        crspm_raw = pd.read_sql_query(query, conn)
         crspm_raw.loc[:, 'date'] = pd.to_datetime(crspm_raw.loc[:, 'date'])
 
         # == For PERMCO-DATES with multiple PERMNOs, aggregate market cap and
@@ -268,8 +286,9 @@ def get_monthly_returns(db, start_date, end_date, balanced = True):
         crspm_raw.rename(columns = {'mktcap_y': 'permco_mktcap'}, inplace = True)
 
         # == Deal with delisted returns == #
-        delist = db.raw_sql("select *, extract(MONTH from dlstdt) as m, " +\
-                            "extract(YEAR from dlstdt) as y from crsp.msedelist")
+        query = "select *, extract(MONTH from dlstdt) as m, " +\
+                "extract(YEAR from dlstdt) as y from crsp.msedelist"
+        delist = pd.read_sql_query(query, conn)
 
         # Follow Shumway (1997) by filling in missing delisted returns with
         # delist codes 400-591 as -30%
@@ -315,18 +334,18 @@ def get_monthly_returns(db, start_date, end_date, balanced = True):
         else:
             df = crspm_raw
 
-        df.to_csv("crsp_ret.csv")
+        df.to_csv("data/crsp_ret.csv", index=False)
 
         return df
 
-def monthly_portfolio_sorts(db, df, sort_cols, ncuts, smoothing = 6):
+def monthly_portfolio_sorts(conn, df, sort_cols, ncuts, smoothing = 6):
     r'''
     Function to conduct monthly portfolio sorts based on PERMNO-Month
     characteristics. The function value-weights and equal-weights, and for both,
     only includes PERMNO-dates where value-weighted is possible.
 
     Args:
-        db: WRDS database connection
+        conn: WRDS database connection
         df: Dataframe containing date, PERMNO, and characteristics. If
         multiple characteristics are required, does portfolio sorts on each.
         sort_cols: List of columns in df containing characteristics
@@ -346,7 +365,7 @@ def monthly_portfolio_sorts(db, df, sort_cols, ncuts, smoothing = 6):
     # == Get CRSP Monthly Data, including delisted returns == #
     sd = df['date'].min() -  MonthEnd(smoothing + 1)
     ed = df['date'].max()
-    crsp = get_monthly_returns(db, sd, ed, balanced = False)
+    crsp = get_monthly_returns(conn, sd, ed, balanced = False)
 
     # Ensure CRSP data is at the end of each month for mergers later
     crsp.loc[:, 'date'] = crsp.loc[:, 'date'] + MonthEnd(0)
@@ -356,7 +375,7 @@ def monthly_portfolio_sorts(db, df, sort_cols, ncuts, smoothing = 6):
     crsp['form_date'] = crsp['date'] - MonthEnd()
 
     # == Get associated valuation ratios for each date in CRSP == #
-    crsp = get_bm_ratios(db, crsp, smoothing, comp_lag = 3)
+    crsp = get_bm_ratios(conn, crsp, smoothing, comp_lag = 3)
 
     # == Compute cuts == #
     psorts = df.groupby('date')[sort_cols].transform(\
@@ -398,8 +417,8 @@ def assemble_portfolios(df, scols, ncuts):
     ratios at formation
 
     Args:
-        df: Dataframe of PERMNOS-Date-Characteristic bins, plus returns and
-            book-to-market
+        df: Dataframe of PERMNOS-Date-Characteristic bins, plus returns,
+            book-to-market and operating profitability
         scols: Columns in the dataframe containing sorting characteristics
         ncuts: Number of portfolios
 
@@ -465,7 +484,7 @@ def calc_vw_char_ports(df, char, variable, ncuts):
     vw = pd.merge(vw, vw_count, left_index = True, right_index = True)
     return vw
 
-def get_bm_ratios(db, crsp_df, smoothing, comp_lag = 3):
+def get_bm_ratios(conn, crsp_df, smoothing, comp_lag = 3, load_override=False):
     r'''
     Takes panel of CRSP returns and market valuations and computes
     book-to-market ratios using COMPUSTAT data, with a user-defined
@@ -474,7 +493,7 @@ def get_bm_ratios(db, crsp_df, smoothing, comp_lag = 3):
     Fama, French, and Davis (2000), in that order.
 
     Args:
-        db: WRDS database connection
+        conn: WRDS database connection
         crsp_df: Dataframe of CRSP data
         smoothing: Window to smooth market capitalizations for smooth BMs
         comp_lag: Integer for desired lag (months) in accounting data.
@@ -488,20 +507,20 @@ def get_bm_ratios(db, crsp_df, smoothing, comp_lag = 3):
     # == Get COMPUSTAT Annual and Quarterly == #
     # First checking if there is saved data with the same lag in the
     # working directory:
-    all_files = [f for f in os.listdir() if os.path.isfile(f)]
-    name_crsp_ccm = "crsp_ccm_" + str(comp_lag) + ".csv"
+    all_files = [f for f in os.listdir("data")]
+    name_crsp_ccm = f"crsp_ccm_{comp_lag}.csv"
 
-    if name_crsp_ccm in  all_files:
-        crsp_ccm = pd.read_csv(name_crsp_ccm)
+    if (name_crsp_ccm in all_files) and not load_override:
+        crsp_ccm = pd.read_csv(f"data/crsp_ccm_{comp_lag}.csv")
         crsp_ccm["date"] = pd.to_datetime(crsp_ccm["date"])
         crsp_ccm["form_date"] = pd.to_datetime(crsp_ccm["form_date"])
         return crsp_ccm
     else:
-        compa = get_comp_ann(db, comp_lag)
-        compq = get_comp_qtr(db, comp_lag)
+        compa = get_comp_ann(conn, comp_lag)
+        compq = get_comp_qtr(conn, comp_lag)
 
         # == Davis, Fama, and French  (2000) book equity == #
-        dff_be = pd.read_csv('DFF_BE.csv')
+        dff_be = pd.read_csv('data/DFF_BE.csv')
         dff_be['dff_known_date_dt'] = [datetime.datetime(x, 6, 30) for \
                                        x in dff_be.YEAR.values]
         dff_be.drop('YEAR', 1, inplace = True)
@@ -519,8 +538,7 @@ def get_bm_ratios(db, crsp_df, smoothing, comp_lag = 3):
                                          acct_permno = 'PERMNO')
 
         # == Use COMPQ, COMPA, then Fama-French-Davis book value == #
-        be_star = np.where(pd.isnull(crsp_ccm['beq']), crsp_ccm['be'],
-                           crsp_ccm['beq'])
+        be_star = np.where(pd.isnull(crsp_ccm['beq']), crsp_ccm['be'], crsp_ccm['beq'])
         be_star = np.where(pd.isnull(be_star), crsp_ccm['DFF_BE'], be_star)
         crsp_ccm['be_star'] = be_star
         crsp_ccm.loc[crsp_ccm.be_star < 0, :] = np.nan
@@ -545,8 +563,12 @@ def get_bm_ratios(db, crsp_df, smoothing, comp_lag = 3):
         crsp_ccm["op"] = np.where(pd.isnull(crsp_ccm['opq']), crsp_ccm['op'], crsp_ccm['opq'])
         crsp_ccm.drop(columns = "opq", inplace = True)
 
+        # Computing latest available YoY asset growth
+        crsp_ccm["at_growth"] = np.where(pd.isnull(crsp_ccm['atq_growth']), crsp_ccm['at_growth'], crsp_ccm['atq_growth'])
+        crsp_ccm.drop(columns = "atq_growth", inplace = True)
+
         # Saving financials data for future use:
-        crsp_ccm.to_csv(name_crsp_ccm)
+        crsp_ccm.to_csv(f"data/crsp_ccm_{comp_lag}.csv", index=False)
 
         return crsp_ccm
 
@@ -593,13 +615,13 @@ def get_latest_accounting(crsp_df, acct_df, acct_date, acct_permno):
     # == Return with original data == #
     return pd.merge(crsp_df, ccm, on = [crsp_permno, crsp_date], how = 'left')
 
-def link_crsp_compustat(db, comp_df, datate_col):
+def link_crsp_compustat(conn, comp_df, datate_col):
     r'''
     Given a dataset of COMPUSTAT accounting data (Quarterly or Annual), get
     associated PERMNO using CRSP-COMPUSTAT linking table
 
     Args:
-        db: WRDS database object
+        conn: WRDS database object
         comp_df: Dataframe of Compustat data. Must have a 'gvkey' column
         datadate_col: Column in COMPUSTAT data that has datadate column
 
@@ -608,10 +630,10 @@ def link_crsp_compustat(db, comp_df, datate_col):
     '''
 
     # == Get linking table = =#
-    link_table = db.raw_sql("select * from crsp.ccmxpf_linktable where " +\
-                          "linktype in ('LU','LC','LD','LF','LN','LO','LS'," +\
-                          "'LX') and USEDFLAG = 1")
-
+    query = "select * from crsp.ccmxpf_linktable where " +\
+            "linktype in ('LU','LC','LD','LF','LN','LO','LS'," +\
+            "'LX') and USEDFLAG = 1"
+    link_table = pd.read_sql_query(query, conn)
     link_table['linkdt_dt'] = pd.to_datetime(link_table['linkdt'])
     link_table['linkenddt_dt'] = pd.to_datetime(link_table['linkenddt'])
 
@@ -635,24 +657,24 @@ def link_crsp_compustat(db, comp_df, datate_col):
 
     return comp_df.drop_duplicates(subset = ['lpermno', datate_col])
 
-def get_comp_qtr(db, comp_lag):
+def get_comp_qtr(conn, comp_lag):
     r'''
     Gets data for book values from COMPUSTAT quarterly
 
     Args:
-        db: WRDS database connection
+        conn: WRDS database connection
         comp_lag: Integer for desired lag (months) in accounting data.
                   Default = 3.
 
     Returns:
         comp_qtr: Dataframe with gvkey-date-accounting info
     '''
-
-    comp_qtr_raw = db.raw_sql("""
+    query = """
             select
                 gvkey, datadate as datadate_qtr,
                 fyearq, fyr, fqtr, atq, txditcq, ceqq, pstkq, seqq, ltq, dlttq,
                 saleq as sale,
+                lag(atq, 4) over (partition by gvkey order by datadate) as lag_atq,
                 coalesce(cogsq, 0) as cogs,
                 coalesce(xsgaq, 0) as xsga,
                 coalesce(xintq, 0) as xint,
@@ -665,8 +687,10 @@ def get_comp_qtr(db, comp_lag):
                 indfmt = 'INDL' and
                 popsrc = 'D' and
                 consol = 'C'
-        """.replace("\t", " ").replace("\n", " "),
-        date_cols = ["datadate_qtr"])
+        """
+    query = query.replace("\t", " ").replace("\n", " ")
+    comp_qtr_raw = pd.read_sql_query(query, conn)
+    comp_qtr_raw["datadate_qtr"] = pd.to_datetime(comp_qtr_raw["datadate_qtr"])
 
     # Set known date and beginning of fiscal year
     comp_qtr_raw["known_date_qtr"] = comp_qtr_raw["datadate_qtr"] + \
@@ -710,21 +734,25 @@ def get_comp_qtr(db, comp_lag):
         np.nan)
     comp_qtr.drop(columns = ["sale", "cogs", "xint", "xsga", "cnt_op_non_zero"], inplace = True)
 
+    # Calculating asset growth rate
+    comp_qtr["atq_growth"] = np.where(
+        comp_qtr["lag_atq"] > 0, (comp_qtr["atq"]-comp_qtr["lag_atq"])/comp_qtr["lag_atq"], np.nan)
+
     # == Add PERMNOS for CRSP link == #
-    comp_qtr = link_crsp_compustat(db, comp_qtr, 'datadate_qtr')
+    comp_qtr = link_crsp_compustat(conn, comp_qtr, 'datadate_qtr')
 
     # # Saving file with quarterly compustat so that we don't need
     # # to download the data everytime we run this
     # comp_qtr.to_csv("comp_qtr.csv", index = False)
 
-    return comp_qtr[['lpermno','known_date_qtr', 'beq', 'opq']]
+    return comp_qtr[['lpermno','known_date_qtr', 'beq', 'opq', "atq_growth"]]
 
-def get_comp_ann(db, comp_lag):
+def get_comp_ann(conn, comp_lag):
     r'''
     Gets data for book values from COMPUSTAT annual
 
     Args:
-        db: WRDS database connection
+        conn: WRDS database connection
         comp_lag: Integer for desired lag (months) in accounting data.
                   Default = 3.
 
@@ -734,11 +762,12 @@ def get_comp_ann(db, comp_lag):
     '''
 
     # == Get raw data == #
-    comp_ann_raw = db.raw_sql("""
+    query = """
             select
                 gvkey, datadate as datadate_ann,
                 fyear, fyr, at, pstkl, txditc, pstkrv, ceq, pstk, seq, lt,
                 sale,
+                lag(at) over (partition by gvkey order by datadate) as lag_at,
                 coalesce(cogs, 0) as cogs,
                 coalesce(xsga, 0) as xsga,
                 coalesce(xint, 0) as xint,
@@ -753,8 +782,10 @@ def get_comp_ann(db, comp_lag):
                 indfmt = 'INDL' and
                 popsrc = 'D' and
                 consol = 'C'
-        """.replace("\t", " ").replace("\n", " "),
-        date_cols = ["datadate_ann"])
+        """
+    query = query.replace("\t", " ").replace("\n", " ")
+    comp_ann_raw = pd.read_sql_query(query, conn)
+    comp_ann_raw["datadate_ann"] = pd.to_datetime(comp_ann_raw["datadate_ann"])
 
     # Set known date and beginning of fiscal year
     comp_ann_raw["known_date_ann"] = comp_ann_raw["datadate_ann"] + MonthEnd(comp_lag)
@@ -774,7 +805,7 @@ def get_comp_ann(db, comp_lag):
 
     # == Compute book equity.  Incorporate Preferred Stock (PS) values use
     # == the redemption value of PS, or the liquidation value the par value
-    # == (in that order) (FF,JFE, 1993, p. 8).  Use Balance Sheet Deferred
+    # == (in that order) (FF, JFE, 1993, p. 8).  Use Balance Sheet Deferred
     # == Taxes TXDITC if available  == #
 
     comp_ann['ps'] = np.where(comp_ann['pstkrv'].isnull(), comp_ann['pstkl'],
@@ -805,10 +836,13 @@ def get_comp_ann(db, comp_lag):
         np.nan)
     comp_ann.drop(columns = ["sale", "cogs", "xint", "xsga", "cnt_op_non_zero"], inplace = True)
 
-    # == Add PERMNOS for CRSP link == #
-    comp_ann = link_crsp_compustat(db, comp_ann, 'datadate_ann')
+    comp_ann["at_growth"] = np.where(
+        comp_ann["lag_at"] > 0, (comp_ann["at"]-comp_ann["lag_at"])/comp_ann["lag_at"], np.nan)
 
-    return comp_ann[['lpermno', 'known_date_ann', 'be', 'op']]
+    # == Add PERMNOS for CRSP link == #
+    comp_ann = link_crsp_compustat(conn, comp_ann, 'datadate_ann')
+
+    return comp_ann[['lpermno', 'known_date_ann', 'be', 'op', "at_growth"]]
 
 
 def load_FF():
@@ -852,12 +886,12 @@ def load_FF():
 
     return ff
 
-def get_ff_ind(db, df):
+def get_ff_ind(conn, df):
     '''
     This function assigns FF 12 industry to permnos in the data frame:
 
     Inputs:
-        db: connection to WRDS to get MSENAMES table with SIC code
+        conn: connection to WRDS to get MSENAMES table with SIC code
         df: dataframe with 'form_date' and 'permno' columns to merge with
         MSENAMES to get appropriate SIC code
 
@@ -869,10 +903,13 @@ def get_ff_ind(db, df):
     '''
 
     query = """
-    select permno, siccd, namedt, nameendt
-    from crspa.msenames
-    """.replace("\n","").replace("\t","")
-    crsp_sic = db.raw_sql(query, date_cols = ["namedt", "nameendt"])
+        select permno, siccd, namedt, nameendt
+        from crsp.msenames
+    """
+    query = query.replace("\n","").replace("\t","")
+    crsp_sic = pd.read_sql_query(query, conn)
+    crsp_sic["namedt"] = pd.to_datetime(crsp_sic["namedt"])
+    crsp_sic["nameendt"] = pd.to_datetime(crsp_sic["nameendt"])
 
     df_ind = pd.merge(df, crsp_sic, on = "permno")
     df_ind = df_ind[(df_ind.form_date >= df_ind.namedt) & (df_ind.form_date <= df_ind.nameendt)]
@@ -886,7 +923,7 @@ def get_ff_ind(db, df):
             return y[ind_between][0]
 
     # Loading data on FF industries:
-    ff_ind = pd.read_csv("ff_12_ind.csv")
+    ff_ind = pd.read_csv("data/ff_12_ind.csv")
 
     df_ind["ff_ind"] = df_ind["siccd"].apply(
         lambda x: find_between(

@@ -1,5 +1,10 @@
 using Distributed
 
+@everywhere using Pkg
+@everywhere Pkg.activate("DRjulia")
+
+using Distributed
+
 print("\nNumber of processors ")
 print(nprocs())
 print("\n")
@@ -12,6 +17,7 @@ print("\n ---- Loading libraries ----\n")
 @everywhere using HCubature # Package to numerically integrate
 @everywhere using ForwardDiff # Package to numerically differentiate
 @everywhere using Dierckx # Package for interpolation
+# @everywhere using SharedArrays
 @everywhere include("funcs.jl")
 
 using CSV
@@ -21,7 +27,9 @@ index_to_append = ARGS[1]
 
 print("\n--- Loading Data ----\n")
 
-svi_data = CSV.read(string("data/raw_data/svi_params_", index_to_append, ".csv"); datarow = 2, delim = ",")
+svi_filepath = string("data/raw_data/svi_params_", index_to_append, ".csv")
+svi_data = DataFrame(CSV.File(svi_filepath))
+
 svi_data = svi_data[svi_data.opt_out .== "FTOL_REACHED", :]
 
 num_options = size(svi_data)[1]

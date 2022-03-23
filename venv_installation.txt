@@ -1,0 +1,36 @@
+# This script creates a local environment and installs necessary libraries
+
+# cd into folder where you want to install the virtual environment
+# (e.g. into code folder in the project folder)
+
+# 1. Create a virtual environment
+python3 -m venv DRenv
+
+# 2. Activate a virtual environment
+source DRenv/bin/activate
+
+# 3. Upgrading pip
+pip install --upgrade pip
+
+# 4. Make sure python and pip point to correct binaries and
+#    there are no libraries installed in pip
+which python
+which pip
+pip list
+
+# 5. Installing libraries (timeit and importlib are already a part of python)
+pip install numba 
+pip install notebook pandas statsmodels matplotlib openpyxl scipy pandasql # Standard libraries
+pip install psycopg2-binary # connecting to PostgreSQL server
+# pip install wrds # to load accounting data from WRDS
+
+# 6. To connect this environment to workspace in Visual Studio Code add line
+#
+#    "python.defaultInterpreterPath": "${workspaceFolder}/DRenv/bin/python"
+#
+# to .vscode/settings.json (i.e. workspace settings file).
+# To open(create if it is not there yet) .vscode/settings.json file can also 
+# do Shift+Cmd+P to open command palette and look for Preference: Open Workspace Setting (JSON)
+
+
+# This should do it!

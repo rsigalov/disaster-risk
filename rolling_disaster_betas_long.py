@@ -17,7 +17,7 @@ from __future__ import division
 import sys
 import numpy as np
 import pandas as pd
-import wrds
+# import wrds
 import time
 from arch.univariate import ARX
 pd.options.display.max_columns = 20
@@ -90,8 +90,12 @@ def RollingOLS(df, window, min_periods = None):
     return pd.DataFrame(betas, index = index,
                         columns = ['beta_' + x for x in xvars])
 
-def get_disaster_factors(innovation_method, level_filter = None,
-                         var_filter = None, day_filter = None):
+
+def filter_fn(row, measures):
+    row_type = (row["level"], row["variable"], row["maturity"], row["agg_freq"])
+    return row_type in measures
+
+def get_disaster_factors(innovation_method, measure_filters):
     r'''
     Function to get various disaster risk factors and their innovations.
 
@@ -118,29 +122,19 @@ def get_disaster_factors(innovation_method, level_filter = None,
         raise ValueError("innovation_method must be either 'AR' or 'fd'")
 
     # == Read in raw data == #
-    raw_f = pd.read_csv("estimated_data/disaster_risk_measures/" +\
-                        "combined_disaster_df.csv")
+    raw_f = pd.read_csv(f"data/disaster_risk_measures/disaster_risk_measures.csv")
     raw_f['date_eom'] = pd.to_datetime(raw_f['date'])
     raw_f.drop('date', axis = 1, inplace = True)
 
     # == Focus only on direct (for S&P 500) and filtered mean aggregation == #
-    raw_f = raw_f[raw_f.agg_type.isin(['direct', 'mean_filter'])]
-
-    # == Apply other filters == #
-    if level_filter is not None:
-        raw_f = raw_f[raw_f['level'].isin(level_filter)]
-    if var_filter is not None:
-        raw_f = raw_f[raw_f['var'].isin(var_filter)]
-    if day_filter is not None:
-        raw_f = raw_f[raw_f['days'].isin(day_filter)]
+    # raw_f = raw_f[raw_f.agg_type.isin(['direct', 'mean_filter'])]
+    raw_f = raw_f[raw_f.apply(lambda row: filter_fn(row, measure_filters), axis=1)]
 
     # == Create variable names == #
-    raw_f['name'] = raw_f['level'] + '_' + raw_f['var'] +\
-                    '_' + raw_f['days'].astype(str)
+    raw_f['name'] = raw_f['level'] + '_' + raw_f['variable'] + '_' + raw_f['maturity'].astype(str)
 
     # == Create pivot table, then resample to end of month == #
-    pdf = raw_f.pivot_table(index = 'date_eom', columns = 'name',
-                            values = 'value')
+    pdf = raw_f.pivot_table(index = 'date_eom', columns = 'name', values = 'value')
     pdf = pdf.resample('M').last()
 
     # == Compute innovations in each factor == #
@@ -162,58 +156,63 @@ def main(argv = None):
 
     # == Parameters == #
     s = time.time()
-    wrds_un = 'ens'     # WRDS username
-    imethod = 'fd'      # Innovations to factors using first-differences
+    inn_method = 'fd'      # Innovations to factors using first-differences
 
     # == Establish WRDS connection == #
     # db = wrds.Connection(wrds_username=wrds_un)
     # db = wrds.Connection()
+    conn = crsp_comp.connectToWRDS()
 
     print("Getting CRSP returns")
     # == Get CRSP monthly data, filling in delisted returns == #
-    crsp = crsp_comp.get_monthly_returns(None, start_date = '1986-01-01',
+    crsp = crsp_comp.get_monthly_returns(conn, start_date = '1986-01-01',
                                     end_date = '2017-12-31', balanced = True)
-    # crsp = crsp_comp.get_monthly_returns(db, start_date = '1986-01-01',
-    #                                 end_date = '2017-12-31', balanced = True)
 
     # Getting a zoo of factors:
     print("Getting a zoo of factors")
     print("")
-    dis_fac, dis_fac_innov = get_disaster_factors(innovation_method = imethod,
-                                                  level_filter = ["union_cs"], # Using only OM+CRSP CS definition
-                                                  var_filter = ["D_clamp","rn_prob_20","rn_prob_80"],
-                                                  day_filter = [30,60,90,120,150,180])
+    measures_to_use = []
+    for variable in ["D_clamp","rn_prob_20","rn_prob_80"]:
+        for maturity in ["level",30,60,90,120,150,180]:
+            measures_to_use += [("Ind", variable, str(maturity), "date_mon")]
 
-    print("Loading level factor")
-    print("")
-    # Adding level factor:
-    level = pd.read_csv("estimated_data/interpolated_D/level_disaster_series.csv")
-    level["date_mon"] = pd.to_datetime(level["date_mon"])
-    level = level.rename(columns = {"D_clamp": "level_D_clamp"})
-    level = level.set_index("date_mon").diff()
-    dis_fac_innov = pd.merge(
-        dis_fac_innov, level[["level_D_clamp"]], left_index = True, right_index = True, how = "left")
+    for variable in ["D_clamp","rn_prob_5","rn_prob_20"]:
+        for maturity in ["level",30,60,90,120,150,180]:
+            measures_to_use += [("SPX", variable, str(maturity), "date_mon")]
 
-    print("Loading SPX level factor from Term structure analysis")
-    print("")
-    spx_disaster = pd.read_csv("estimated_data/interpolated_D/spx_disaster_series.csv")
-    spx_disaster["date_mon"] = pd.to_datetime(spx_disaster["date_mon"])
-    spx_disaster = spx_disaster.rename(columns = {"SPX (Monthly)": "spx_disaster"})
-    spx_disaster = spx_disaster[spx_disaster.date_mon >= "1996-01-01"]
-    spx_disaster = spx_disaster.set_index("date_mon").diff()
-    dis_fac_innov = pd.merge(
-        dis_fac_innov, spx_disaster[["spx_disaster"]], left_index = True, right_index = True, how = "left")
-
-    print("Loading Emil's old factor")
-    print("")
-    emil = pd.read_csv("Emils_D.csv")
-    emil["date"] = pd.to_datetime(emil["date"], format = "%m/%d/%y") + pd.offsets.MonthEnd(0)
-    emil = emil.rename(columns = {"D":"emil"})
-    emil = emil.set_index("date").diff()
-    dis_fac_innov = pd.merge(
-        dis_fac_innov, emil, left_index = True, right_index = True, how = "left")
-
+    dis_fac, dis_fac_innov = get_disaster_factors(inn_method, measures_to_use)
     print(dis_fac_innov.head())
+
+    # print("Loading level factor")
+    # print("")
+    # # Adding level factor:
+    # level = pd.read_csv("estimated_data/interpolated_D/level_disaster_series.csv")
+    # level["date_mon"] = pd.to_datetime(level["date_mon"])
+    # level = level.rename(columns = {"D_clamp": "level_D_clamp"})
+    # level = level.set_index("date_mon").diff()
+    # dis_fac_innov = pd.merge(
+    #     dis_fac_innov, level[["level_D_clamp"]], left_index = True, right_index = True, how = "left")
+
+    # print("Loading SPX level factor from Term structure analysis")
+    # print("")
+    # spx_disaster = pd.read_csv("estimated_data/interpolated_D/spx_disaster_series.csv")
+    # spx_disaster["date_mon"] = pd.to_datetime(spx_disaster["date_mon"])
+    # spx_disaster = spx_disaster.rename(columns = {"SPX (Monthly)": "spx_disaster"})
+    # spx_disaster = spx_disaster[spx_disaster.date_mon >= "1996-01-01"]
+    # spx_disaster = spx_disaster.set_index("date_mon").diff()
+    # dis_fac_innov = pd.merge(
+    #     dis_fac_innov, spx_disaster[["spx_disaster"]], left_index = True, right_index = True, how = "left")
+
+    # print("Loading Emil's old factor")
+    # print("")
+    # emil = pd.read_csv("Emils_D.csv")
+    # emil["date"] = pd.to_datetime(emil["date"], format = "%m/%d/%y") + pd.offsets.MonthEnd(0)
+    # emil = emil.rename(columns = {"D":"emil"})
+    # emil = emil.set_index("date").diff()
+    # dis_fac_innov = pd.merge(
+    #     dis_fac_innov, emil, left_index = True, right_index = True, how = "left")
+
+    # print(dis_fac_innov.head())
 
     # == Merge returns with factor innovations == #
     crsp_with_fac = pd.merge(crsp, dis_fac_innov,
@@ -226,21 +225,20 @@ def main(argv = None):
     # == Compute betas with respect to innovations in each factor == #
     for i, f in enumerate(dis_fac_innov.columns):
         print("Factor %d out of %d"%(i+1, len(dis_fac_innov.columns)))
-        beta_f = crsp_with_fac.groupby('permno')['ret', f].\
-                    apply(RollingOLS, 24, 18)
+        beta_f = crsp_with_fac.groupby('permno')['ret', f].apply(RollingOLS, 24, 18)
         crsp_with_fac = crsp_with_fac.join(beta_f)
 
     # == Output permno-date-betas == #
-    output_df = crsp_with_fac[['permno', 'date_eom'] + \
-                              ['beta_' + x for x in dis_fac_innov.columns]]
+    output_df = crsp_with_fac[['permno', 'date_eom'] + ['beta_' + x for x in dis_fac_innov.columns]]
 
-    output_df.to_csv('estimated_data/disaster_risk_betas/' +\
-                     'disaster_risk_betas.csv', index = False)
-    print('Computed betas with respect to disaster risk factors ' +\
-          'in %.2f minutes' %((time.time() - s) / 60))
+    output_df.to_csv("data/disaster_risk_betas/disaster_risk_betas.csv", index = False)
+    print("Computed betas with respect to disaster risk factors in %.2f minutes" %((time.time() - s) / 60))
+
+    conn.close()
 
 ##  -----------------------------------------------------------------------
 ##                             main program
 ##  -----------------------------------------------------------------------
 
-if __name__ == "__main__": sys.exit(main(sys.argv))
+if __name__ == "__main__": 
+    sys.exit(main(sys.argv))

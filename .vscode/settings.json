@@ -1,0 +1,15 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/DRenv/bin/python",
+    "julia.executablePath": "/Applications/Julia-1.7.app/Contents/Resources/julia/bin/julia",
+    "r.bracketedPaste": true,
+    "r.rterm.mac": "/Library/Frameworks/Python.framework/Versions/3.9/bin/radian",
+    "r.lsp.debug": true,
+    "r.lsp.diagnostics": false,
+    "r.rterm.option": [
+        "--no-save",
+        "--no-restore",
+        "--r-binary=/usr/local/bin/R"
+    ],
+    "editor.fontSize": 13,
+    "r.plot.useHttpgd": true
+}

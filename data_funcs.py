@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import wrds
+# import wrds
 
 def get_crsp_permno(df):
     r'''

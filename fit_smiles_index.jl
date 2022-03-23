@@ -1,9 +1,15 @@
 using Distributed
 
+@everywhere using Pkg
+@everywhere Pkg.activate("DRjulia")
+
+
+using CSV
+using Dates
+
 print("\nNumber of processors ")
 print(nprocs())
 print("\n")
-
 print("\n ---- Loading libraries ----\n")
 
 # @everywhere using DataFrames # self explanatory
@@ -16,9 +22,6 @@ using DataFrames
 @everywhere using Dierckx # Package for interpolation
 @everywhere include("funcs.jl")
 
-using CSV
-using Dates
-
 print("\n--- Loading Data ----\n")
 
 index_to_append = ARGS[1]
@@ -26,7 +29,7 @@ index_to_append = ARGS[1]
 
 # Loading data on options:
 opt_data_filepath = string("data/raw_data/opt_data_", index_to_append, ".csv")
-df = CSV.read(opt_data_filepath; datarow = 2, delim = ",")
+df = DataFrame(CSV.File(opt_data_filepath))
 df_size = size(df)[1]
 print(string("\n--- Total size of dataframe is ", df_size, " rows ---\n"))
 
@@ -42,11 +45,11 @@ end
 
 
 # Calculating number of options per secid, observation date and expiration date
-df_unique_N = by(df, [:secid, :date, :exdate], number = :cp_flag => length)
+df_unique_N = combine(groupby(df, [:secid, :date, :exdate]), :cp_flag => length)
 
 # If don't have at least 5 observations throw this option out since
 # we need to minimize over 4 variables:
-df_unique = df_unique_N[df_unique_N[:number] .>= 5, :][:, [:secid,:date,:exdate]]
+df_unique = filter(row -> row.cp_flag_length >= 5, df_unique_N)[:, [:secid,:date,:exdate]]
 num_options = size(df_unique)[1]
 volume_arr = zeros(num_options) # Array to store sum of volume for each maturity
 open_interest_arr = zeros(num_options) # Array to store sum of open interest for each maturity
@@ -56,18 +59,18 @@ print(string("\nHave ", num_options, " smiles in total to fit\n"))
 
 # Loading data on index dividend yield:
 div_yield_filepath = string("data/raw_data/div_yield_", index_to_append, ".csv")
-div_yield = CSV.read(div_yield_filepath; datarow = 2, delim = ",")
+div_yield = DataFrame(CSV.File(div_yield_filepath))
 div_yield = sort(div_yield, [:secid, :date])
 
 # Loading data on interest rate to interpolate cont-compounded rate:
-zcb = CSV.read("data/raw_data/zcb_data.csv"; datarow = 2, delim = ",")
+zcb = DataFrame(CSV.File("data/raw_data/zcb_data.csv"))
 zcb = sort(zcb, [:date, :days])
 
 print("\n--- Generating array with options ----\n")
 option_arr = Array{OptionData, 1}(undef, num_options)
 i_option = 0
 
-df = sort(df, cols = [:secid, :date, :exdate, :strike_price])
+df = sort(df, [:secid, :date, :exdate, :strike_price])
 for subdf in groupby(df[1:df_limit, :], [:secid, :date, :exdate])
     if i_option % 2500 == 0
         print(string("Preparing option smile ", i_option, " out of ", num_options, "\n"))

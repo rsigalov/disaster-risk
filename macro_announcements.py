@@ -46,52 +46,65 @@ def estimate_reaction(int_d, int_spx, ann_df, days_before, days_after):
     to_return["after"] = after_list
     to_return["before_spx"] = before_spx_list
     to_return["after_spx"] = after_spx_list
-    to_return["diff_ind"] = to_return["after"] - to_return["before"]
-    to_return["diff_spx"] = to_return["after_spx"] - to_return["before_spx"]
-    to_return["surprise_level"] = to_return["actual"] - to_return["survey_average"]
+    # to_return["diff_ind"] = to_return["after"] - to_return["before"]
+    # to_return["diff_spx"] = to_return["after_spx"] - to_return["before_spx"]
+    # to_return["surprise_level"] = to_return["actual"] - to_return["survey_average"]
 
     return to_return
     
 
 # Loading data on macro announcements
-ism_pmi_ann = pd.read_csv("data/ism_pmi_announcements.csv")
+pmi_ann = pd.read_csv("data/ism_pmi_announcements.csv")
 nonfarm_ann = pd.read_csv("data/nonfarm_payroll_announcements.csv")
+cpi_ann = pd.read_excel("data/cpi_announcements.xlsx", sheet_name="Sheet1")
+fomc_ann = pd.read_excel("data/NakamuraSteinsson_update.xlsx", sheet_name="shocks")
 
-ism_pmi_ann = ism_pmi_ann[ism_pmi_ann.survey_average.notnull()]
+fomc_ann.rename({"fomc":"ann_date"}) 
+
+pmi_ann = pmi_ann[pmi_ann.survey_average.notnull()]
 nonfarm_ann = nonfarm_ann[nonfarm_ann.survey_average.notnull()]
+cpi_ann = cpi_ann[cpi_ann.survey_average.notnull()]
 
-ism_pmi_ann["ann_date"] = pd.to_datetime(ism_pmi_ann["ann_date"], format = "%m/%d/%y")
-ism_pmi_ann["ref_month"] = pd.to_datetime(ism_pmi_ann["ref_month"], format = "%m/%d/%y")
+pmi_ann["ann_date"] = pd.to_datetime(pmi_ann["ann_date"], format = "%m/%d/%y")
+pmi_ann["ref_month"] = pd.to_datetime(pmi_ann["ref_month"], format = "%m/%d/%y")
 
 nonfarm_ann["ann_date"] = pd.to_datetime(nonfarm_ann["ann_date"], format = "%m/%d/%y")
 nonfarm_ann["ref_month"] = pd.to_datetime(nonfarm_ann["ref_month"], format = "%m/%d/%y")
 
-ism_pmi_ann = ism_pmi_ann[ism_pmi_ann.ann_date <= "2017-12-01"]
-nonfarm_ann = nonfarm_ann[nonfarm_ann.ann_date <= "2017-12-01"]
+cpi_ann["ann_date"] = pd.to_datetime(cpi_ann["ann_date"], format = "%m/%d/%Y")
+
+fomc_ann["ann_date"] = pd.to_datetime(cpi_ann["ann_date"], format = "%m/%d/%y")
+
+# ism_pmi_ann = ism_pmi_ann[ism_pmi_ann.ann_date <= "2017-12-01"]
+# nonfarm_ann = nonfarm_ann[nonfarm_ann.ann_date <= "2017-12-01"]
 
 # Loading individual disaster measures:
-int_d = pd.DataFrame(columns = ["secid", "date", "D_clamp"])
-
+df_list = []
 for days in [30, 60, 90, 120, 150, 180]:
     print(days)
-    int_d_to_append = pd.read_csv("estimated_data/interpolated_D/int_ind_disaster_union_cs_" + str(days) + ".csv")
-    int_d_to_append = int_d_to_append[["secid", "date", "D_clamp"]]
+    int_d_to_append = pd.read_csv(f"data/interpolated_D/interpolated_disaster_individual_{days}.csv")
+    int_d_to_append = int_d_to_append[int_d_to_append["variable"] == "D_clamp"]
+    int_d_to_append = int_d_to_append[["secid", "date", "value"]]
+    int_d_to_append = int_d_to_append.rename(columns={"value": "D_clamp"})
     int_d_to_append["days"] = days
-    int_d = int_d.append(int_d_to_append)
+    df_list.append(int_d_to_append)
 
+int_d = pd.concat(df_list, ignore_index=True)
 int_d["date"] = pd.to_datetime(int_d["date"])
-int_d = int_d[int_d.D_clamp.notnull()]
+int_d = int_d[int_d["D_clamp"].notnull()]
 
 # Loading data on SPX options:
-int_spx = pd.DataFrame(columns = ["secid", "date", "D_clamp"])
-
+df_list = []
 for days in [30, 60, 90, 120, 150, 180]:
     print(days)
-    to_append = pd.read_csv("estimated_data/interpolated_D/int_D_spx_days_" + str(days) + ".csv")
-    to_append = to_append[["secid", "date", "D_clamp"]]
+    to_append = pd.read_csv(f"data/interpolated_D/interpolated_disaster_spx_{days}.csv")
+    to_append = to_append[to_append["variable"] == "D_clamp"]
+    to_append = to_append[["secid", "date", "value"]]
+    to_append = to_append.rename(columns={"value": "D_clamp"})
     to_append["days"] = days
-    int_spx = int_spx.append(to_append)
+    df_list.append(to_append)
 
+int_spx = pd.concat(df_list, ignore_index=True)
 int_spx["date"] = pd.to_datetime(int_spx["date"])
 
 # Estimating reactions of individual and spx disaster measures:
@@ -99,107 +112,151 @@ nonfarm_react_7_7 = estimate_reaction(int_d, int_spx, nonfarm_ann, 7, 7)
 nonfarm_react_3_3 = estimate_reaction(int_d, int_spx, nonfarm_ann, 3, 3)
 nonfarm_react_1_1 = estimate_reaction(int_d, int_spx, nonfarm_ann, 1, 1)
 
-pmi_react_7_7 = estimate_reaction(int_d, int_spx, ism_pmi_ann, 7, 7)
-pmi_react_3_3 = estimate_reaction(int_d, int_spx, ism_pmi_ann, 3, 3)
-pmi_react_1_1 = estimate_reaction(int_d, int_spx, ism_pmi_ann, 1, 1)
+pmi_react_7_7 = estimate_reaction(int_d, int_spx, pmi_ann, 7, 7)
+pmi_react_3_3 = estimate_reaction(int_d, int_spx, pmi_ann, 3, 3)
+pmi_react_1_1 = estimate_reaction(int_d, int_spx, pmi_ann, 1, 1)
+
+cpi_react_7_7 = estimate_reaction(int_d, int_spx, cpi_ann, 7, 7)
+cpi_react_3_3 = estimate_reaction(int_d, int_spx, cpi_ann, 3, 3)
+cpi_react_1_1 = estimate_reaction(int_d, int_spx, cpi_ann, 1, 1)
+
+fomc_react_7_7 = estimate_reaction(int_d, int_spx, fomc_ann, 7, 7)
+fomc_react_3_3 = estimate_reaction(int_d, int_spx, fomc_ann, 3, 3)
+fomc_react_1_1 = estimate_reaction(int_d, int_spx, fomc_ann, 1, 1)
+
+cpi_react_7_7["survey_average"] = pd.to_numeric(cpi_react_7_7["survey_average"], errors="coerce")
+cpi_react_3_3["survey_average"] = pd.to_numeric(cpi_react_3_3["survey_average"], errors="coerce")
+cpi_react_1_1["survey_average"] = pd.to_numeric(cpi_react_1_1["survey_average"], errors="coerce")
+
+# Saving all reactions
+df_list = [
+    nonfarm_react_1_1, nonfarm_react_3_3, nonfarm_react_7_7,
+    pmi_react_1_1, pmi_react_3_3, pmi_react_7_7,
+    cpi_react_1_1, cpi_react_3_3, cpi_react_7_7]
+
+for df in df_list:
+    df["surprise"] = df['actual'] - df['survey_average']
+
+for df in [fomc_react_7_7, fomc_react_3_3, fomc_react_1_1]:
+    df["surprise"] = df["ns.shock"]
+    df["ann_date"] = df["fomc"]
+
+# Putting together all dataframes to save
+ann_types = ["nonfarm"]*3 + ["pmi"]*3 + ["cpi"]*3 + ["fomc"]*3
+windows = [7, 3, 1]*4
+df_list_to_save = []
+for df, ann_type, window in zip(df_list + [fomc_react_7_7, fomc_react_3_3, fomc_react_1_1], ann_types, windows):
+    df_to_append = df[["ann_date", "surprise", "before", "after", "before_spx", "after_spx"]]
+    df_to_append["ann_type"] = ann_type
+    df_to_append["window"] = window
+    df_list_to_save.append(df_to_append)
+
+df_to_save = pd.concat(df_list_to_save, ignore_index=True)
+df_to_save.to_csv("data/macro_announcements/macro_ann_reaction.csv", index=False)
 
 # Standardizing variables:
-for react_df in [nonfarm_react_7_7, nonfarm_react_3_3, nonfarm_react_1_1,
-                 pmi_react_7_7, pmi_react_3_3, pmi_react_1_1]:
-    for variable in ["diff_ind", "diff_spx", "surprise_level"]:
-        react_df.loc[:, variable] = react_df.loc[:, variable] - np.mean(react_df.loc[:, variable])
-        react_df.loc[:, variable] = react_df.loc[:, variable]/np.std(react_df.loc[:, variable])
+# for react_df in [nonfarm_react_7_7, nonfarm_react_3_3, nonfarm_react_1_1,
+#                  pmi_react_7_7, pmi_react_3_3, pmi_react_1_1]:
+#     for variable in ["diff_ind", "diff_spx", "surprise_level"]:
+#         react_df.loc[:, variable] = react_df.loc[:, variable] - np.mean(react_df.loc[:, variable])
+#         react_df.loc[:, variable] = react_df.loc[:, variable]/np.std(react_df.loc[:, variable])
 
-# Saving macro announcement reactions:
-nonfarm_react_3_3.to_csv("estimated_data/macro_announcements/nonfarm_react.csv")
-pmi_react_3_3.to_csv("estimated_data/macro_announcements/pmi_react.csv")
+# # Saving macro announcement reactions:
+# nonfarm_react_3_3.to_csv("estimated_data/macro_announcements/nonfarm_react.csv")
+# pmi_react_3_3.to_csv("estimated_data/macro_announcements/pmi_react.csv")
+
+# Standardizing variables for regressions
+macro_react = pd.read_csv("data/macro_announcements/macro_ann_reaction.csv")
+surprise_norm = macro_react.groupby(["ann_type", "window"])["surprise"].std().rename("to_norm_surprise").reset_index()
 
 
-# Putting everything in a table:
-reg_df = nonfarm_react_3_3
-reg1 = smf.ols(formula = "diff_ind ~ surprise_level", data = reg_df).fit(cov_type = "HC3")
-reg_df = nonfarm_react_3_3[
-        ((nonfarm_react_3_3.ann_date >= "2000-01-01") & (nonfarm_react_3_3.ann_date <= "2003-12-31")) |
-        ((nonfarm_react_3_3.ann_date >= "2007-01-01") & (nonfarm_react_3_3.ann_date <= "2009-12-31"))]
-reg2 = smf.ols(formula = "diff_ind ~ surprise_level", data = reg_df).fit(cov_type = "HC3")
-reg_df = nonfarm_react_3_3[
-        (nonfarm_react_3_3.surprise_level >= -2) & (nonfarm_react_3_3.surprise_level <= 2) &
-        (nonfarm_react_3_3.diff_ind >= -2) & (nonfarm_react_3_3.diff_ind <= 2)]
-reg3 = smf.ols(formula = "diff_ind ~ surprise_level", data = reg_df).fit(cov_type = "HC3")
-reg_df = nonfarm_react_3_3
-reg4 = smf.ols(formula = "diff_spx ~ surprise_level", data = reg_df).fit(cov_type = "HC3")
 
-regs = [reg1, reg2, reg3, reg4]
 
-path = "SS_tables/macro_announcements.tex"
-f = open(path, "w")
-f.write("\small")
-f.write("\\begin{tabular}{lcccc}\n")
-f.write("\\toprule \n")
-f.write("  & \\multicolumn{3}{c}{Individual} & SPX \\\\ \n")
-f.write("\cline{2-5} \n")
-f.write(" Sample: & Full & Crisis & No Outliers & Full \\\\ \n")
-f.write("  & (1) & (2) & (3) & (4) \\\\ \\\\[-1.8ex] \n")
-f.write("\hline \\\\[-1.8ex] \n")
+# # Putting everything in a table:
+# reg_df = nonfarm_react_3_3
+# reg1 = smf.ols(formula = "diff_ind ~ surprise_level", data = reg_df).fit(cov_type = "HC3")
+# reg_df = nonfarm_react_3_3[
+#         ((nonfarm_react_3_3.ann_date >= "2000-01-01") & (nonfarm_react_3_3.ann_date <= "2003-12-31")) |
+#         ((nonfarm_react_3_3.ann_date >= "2007-01-01") & (nonfarm_react_3_3.ann_date <= "2009-12-31"))]
+# reg2 = smf.ols(formula = "diff_ind ~ surprise_level", data = reg_df).fit(cov_type = "HC3")
+# reg_df = nonfarm_react_3_3[
+#         (nonfarm_react_3_3.surprise_level >= -2) & (nonfarm_react_3_3.surprise_level <= 2) &
+#         (nonfarm_react_3_3.diff_ind >= -2) & (nonfarm_react_3_3.diff_ind <= 2)]
+# reg3 = smf.ols(formula = "diff_ind ~ surprise_level", data = reg_df).fit(cov_type = "HC3")
+# reg_df = nonfarm_react_3_3
+# reg4 = smf.ols(formula = "diff_spx ~ surprise_level", data = reg_df).fit(cov_type = "HC3")
+
+# regs = [reg1, reg2, reg3, reg4]
+
+# path = "SS_tables/macro_announcements.tex"
+# f = open(path, "w")
+# f.write("\small")
+# f.write("\\begin{tabular}{lcccc}\n")
+# f.write("\\toprule \n")
+# f.write("  & \\multicolumn{3}{c}{Individual} & SPX \\\\ \n")
+# f.write("\cline{2-5} \n")
+# f.write(" Sample: & Full & Crisis & No Outliers & Full \\\\ \n")
+# f.write("  & (1) & (2) & (3) & (4) \\\\ \\\\[-1.8ex] \n")
+# f.write("\hline \\\\[-1.8ex] \n")
         
-f.write("Surprise & {:.3f}   & {:.3f}   & {:.3f} & {:.3f}  \\\\ \n".format(*[x.params[1] for x in regs]))
-f.write("           & ({:.3f}) & ({:.3f}) & ({:.3f}) & ({:.3f})  \\\\ \\\\[-1.8ex] \n".format(*list([x.bse[1] for x in regs])))
+# f.write("Surprise & {:.3f}   & {:.3f}   & {:.3f} & {:.3f}  \\\\ \n".format(*[x.params[1] for x in regs]))
+# f.write("           & ({:.3f}) & ({:.3f}) & ({:.3f}) & ({:.3f})  \\\\ \\\\[-1.8ex] \n".format(*list([x.bse[1] for x in regs])))
 
-f.write("Constant & {:.3f}  & {:.3f} & {:.3f} & {:.3f}  \\\\ \n".format(*[x.params[0] for x in regs]))
-f.write("           & ({:.3f}) & ({:.3f}) & ({:.3f}) & ({:.3f})  \\\\ \\\\[-1.8ex] \n".format(*[x.bse[0] for x in regs]))
+# f.write("Constant & {:.3f}  & {:.3f} & {:.3f} & {:.3f}  \\\\ \n".format(*[x.params[0] for x in regs]))
+# f.write("           & ({:.3f}) & ({:.3f}) & ({:.3f}) & ({:.3f})  \\\\ \\\\[-1.8ex] \n".format(*[x.bse[0] for x in regs]))
 
-f.write("$R^2$      & {:.3f}  & {:.3f} & {:.3f} & {:.3f}  \\\\ \\\\[-1.8ex] \n".format(*[x.rsquared for x in regs]))
+# f.write("$R^2$      & {:.3f}  & {:.3f} & {:.3f} & {:.3f}  \\\\ \\\\[-1.8ex] \n".format(*[x.rsquared for x in regs]))
 
-f.write("\\bottomrule \n")
-f.write("\end{tabular}")  
-f.close()
-
-
+# f.write("\\bottomrule \n")
+# f.write("\end{tabular}")  
+# f.close()
 
 
-# Looking at the scatterplot:
-# 1. Getting outliers:
-outliers_diff = list(nonfarm_react_3_3.sort_values("diff_ind").ann_date[0:5])
-outliers_diff = outliers_diff + list(nonfarm_react_3_3.sort_values("diff_ind", ascending = False).ann_date[0:7])
 
-outliers_surprise = list(nonfarm_react_3_3.sort_values("surprise_level").ann_date[0:6])
-outliers_surprise = outliers_surprise + list(nonfarm_react_3_3.sort_values("surprise_level", ascending = False).ann_date[0:6])
 
-outliers = outliers_surprise + outliers_diff
+# # Looking at the scatterplot:
+# # 1. Getting outliers:
+# outliers_diff = list(nonfarm_react_3_3.sort_values("diff_ind").ann_date[0:5])
+# outliers_diff = outliers_diff + list(nonfarm_react_3_3.sort_values("diff_ind", ascending = False).ann_date[0:7])
 
-# 2. Plotting and setting dates to outliers:
-nonfarm_ann_out = nonfarm_react_3_3[nonfarm_react_3_3.ann_date.isin(outliers)]
-nonfarm_ann_not_out = nonfarm_react_3_3[~nonfarm_react_3_3.ann_date.isin(outliers)]
+# outliers_surprise = list(nonfarm_react_3_3.sort_values("surprise_level").ann_date[0:6])
+# outliers_surprise = outliers_surprise + list(nonfarm_react_3_3.sort_values("surprise_level", ascending = False).ann_date[0:6])
 
-fig, ax = plt.subplots(figsize = (8,6))
-ax.scatter(nonfarm_ann_not_out["surprise_level"], nonfarm_ann_not_out["diff_ind"], color = "0.85")
-ax.scatter(nonfarm_ann_out["surprise_level"], nonfarm_ann_out["diff_ind"], color = "0.1")
+# outliers = outliers_surprise + outliers_diff
 
-for i in range(nonfarm_ann_out.shape[0]):
-    row = nonfarm_ann_out.iloc[i]
-    ax.annotate(
-            row.ann_date.strftime('%Y-%m-%d'), 
-            (row.surprise_level, row.diff_ind))
+# # 2. Plotting and setting dates to outliers:
+# nonfarm_ann_out = nonfarm_react_3_3[nonfarm_react_3_3.ann_date.isin(outliers)]
+# nonfarm_ann_not_out = nonfarm_react_3_3[~nonfarm_react_3_3.ann_date.isin(outliers)]
+
+# fig, ax = plt.subplots(figsize = (8,6))
+# ax.scatter(nonfarm_ann_not_out["surprise_level"], nonfarm_ann_not_out["diff_ind"], color = "0.85")
+# ax.scatter(nonfarm_ann_out["surprise_level"], nonfarm_ann_out["diff_ind"], color = "0.1")
+
+# for i in range(nonfarm_ann_out.shape[0]):
+#     row = nonfarm_ann_out.iloc[i]
+#     ax.annotate(
+#             row.ann_date.strftime('%Y-%m-%d'), 
+#             (row.surprise_level, row.diff_ind))
     
-ax.set_xlabel("Nonfarm Payroll Surprise (Standardized)")
-ax.set_ylabel("Change in Individual Disaster Measure (Standardized)")
-plt.tight_layout()
-plt.savefig("SS_figures/macro_announcements.pdf")
+# ax.set_xlabel("Nonfarm Payroll Surprise (Standardized)")
+# ax.set_ylabel("Change in Individual Disaster Measure (Standardized)")
+# plt.tight_layout()
+# plt.savefig("SS_figures/macro_announcements.pdf")
 
 
-# Removing observations with either x or y beyond 2 st.dev from the mean
-# and running the same regressions to see if there is an effect if we 
-# remove outliers
-not_out_df = nonfarm_react_3_3[(nonfarm_react_3_3.surprise_level <= 2) & (nonfarm_react_3_3.surprise_level >= -2) &
-                  (nonfarm_react_3_3.diff_ind <= 2) & (nonfarm_react_3_3.diff_ind >= -2)]
+# # Removing observations with either x or y beyond 2 st.dev from the mean
+# # and running the same regressions to see if there is an effect if we 
+# # remove outliers
+# not_out_df = nonfarm_react_3_3[(nonfarm_react_3_3.surprise_level <= 2) & (nonfarm_react_3_3.surprise_level >= -2) &
+#                   (nonfarm_react_3_3.diff_ind <= 2) & (nonfarm_react_3_3.diff_ind >= -2)]
 
-smf.ols(formula = "diff_ind ~ surprise_level", data = nonfarm_react_3_3).fit(cov_type = "HC3").summary()
-smf.ols(formula = "diff_ind ~ surprise_level", data = not_out_df).fit(cov_type = "HC3").summary()
+# smf.ols(formula = "diff_ind ~ surprise_level", data = nonfarm_react_3_3).fit(cov_type = "HC3").summary()
+# smf.ols(formula = "diff_ind ~ surprise_level", data = not_out_df).fit(cov_type = "HC3").summary()
 
-# Plotting side by side:
-fig, (ax1, ax2) = plt.subplots(ncols=2, sharey=False, figsize = (10,5))
-sns.regplot(data = nonfarm_react_3_3, x = "surprise_level", y = "diff_ind", ax = ax1)
-sns.regplot(data = not_out_df, x = "surprise_level", y = "diff_ind", ax = ax2)
+# # Plotting side by side:
+# fig, (ax1, ax2) = plt.subplots(ncols=2, sharey=False, figsize = (10,5))
+# sns.regplot(data = nonfarm_react_3_3, x = "surprise_level", y = "diff_ind", ax = ax1)
+# sns.regplot(data = not_out_df, x = "surprise_level", y = "diff_ind", ax = ax2)
 
 
 

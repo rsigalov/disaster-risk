@@ -11,26 +11,23 @@ import sys
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
-import statsmodels.formula.api as smf
-from matplotlib import pyplot as plt
 from functools import reduce
-import os
-os.chdir("/Users/rsigalov/Documents/PhD/disaster-risk-revision/")
+# import os
+# os.chdir("/Users/rsigalov/Documents/PhD/disaster-risk-revision/")
 
 def mean_with_truncation(x):
     return np.mean(x[(x <= np.quantile(x, 0.99)) & (x >= np.quantile(x, 0.01))])
     
 def aggregate_disaster_at_level(df, agg_var, agg_level_var, min_obs_agg_level):
-    mean_cnt_df = df.groupby(["secid", agg_level_var])[agg_var]\
+    mean_cnt_df = df.groupby(["secid", agg_level_var])["value"]\
                     .count()\
                     .reset_index()\
-                    .rename({agg_var: "cnt"}, axis = 1)
+                    .rename({"value": "cnt"}, axis = 1)
                        
     mean_cnt_df = mean_cnt_df[mean_cnt_df.cnt >= 10]
     df_filter = pd.merge(mean_cnt_df, df, on = ["secid", agg_level_var], how = "left")
-    df_mean_mon = df_filter.groupby(["secid", agg_level_var])[agg_var].mean().reset_index()
-    level = df_mean_mon.groupby([agg_level_var])[agg_var].apply(mean_with_truncation).rename(agg_var)
+    df_mean_mon = df_filter.groupby(["secid", agg_level_var])["value"].mean().reset_index()
+    level = df_mean_mon.groupby([agg_level_var])["value"].apply(mean_with_truncation).rename("value")
     num_comps = df_mean_mon.groupby([agg_level_var])["secid"].count()
     
     level.index.names = ["date"]
@@ -45,12 +42,13 @@ class aggregated_disaster_measure():
         self.agg_freq = agg_freq
         self.min_comps_freq = min_comps_freq
         self.level = level
+
         if maturity == "level":
             self.value, self.num_comps = aggregate_disaster_at_level(
-                    df, variable, agg_freq, min_comps_freq)
+                    df[(df["variable"] == variable)], variable, agg_freq, min_comps_freq)
         else:
             self.value, self.num_comps = aggregate_disaster_at_level(
-                    df[df.days == maturity], variable, agg_freq, min_comps_freq)
+                    df[(df["days"] == maturity) & (df["variable"] == variable)], variable, agg_freq, min_comps_freq)
             
         self.value.rename("value", inplace = True)
         self.num_comps.rename("num_comps", inplace = True)
@@ -71,40 +69,30 @@ def main(argv = None):
     print("")
     print("---- Loading interpolated disaster measures ----")
     print("")
-    int_d = pd.DataFrame(columns = ["secid", "date", "D_clamp"])
-    
-    for days in [30, 60, 90, 120, 150, 180]:
-        print(days)
-        int_d_to_append = pd.read_csv("estimated_data/interpolated_D/int_ind_disaster_union_cs_" + str(days) + ".csv")
-        int_d_to_append = int_d_to_append[["secid", "date", "D_clamp", "rn_prob_20", "rn_prob_80"]]
-        int_d_to_append["days"] = days
-        int_d = int_d.append(int_d_to_append)
 
+    # Individual measures
+    int_ind_list = []
     for days in [30, 60, 90, 120, 150, 180]:
-        print(days)
-        int_d_to_append = pd.read_csv("estimated_data/interpolated_D/int_ind_disaster_new_release_days_" + str(days) + ".csv")
-        int_d_to_append = int_d_to_append[["secid", "date", "D_clamp", "rn_prob_20", "rn_prob_80"]]
-        int_d_to_append["days"] = days
-        int_d = int_d.append(int_d_to_append)
-    
-    int_d["date"] = pd.to_datetime(int_d["date"])
-    int_d["date_mon"] = int_d["date"] + pd.offsets.MonthEnd(0)
-    int_d["date_week"] = int_d['date'] - int_d['date'].dt.weekday.astype('timedelta64[D]')
-    
-    # Loading SPX derived measures:
-    int_spx = pd.DataFrame(columns = ["secid", "date", "D_clamp"])
-    
+        int_ind = pd.read_csv(f"data/interpolated_D/interpolated_disaster_individual_{days}.csv")
+        int_ind["date"] = pd.to_datetime(int_ind["date"])
+        int_ind["date_mon"] = int_ind["date"] + pd.offsets.MonthEnd(0)
+        int_ind["date_week"] = int_ind['date'] - int_ind['date'].dt.weekday.astype('timedelta64[D]')
+        int_ind_list.append(int_ind)
+
+    int_ind = pd.concat(int_ind_list, ignore_index=True)
+    del(int_ind_list)
+
+    # spx measures
+    int_spx_list = []
     for days in [30, 60, 90, 120, 150, 180]:
-        print(days)
-        to_append = pd.read_csv("estimated_data/interpolated_D/int_D_spx_days_" + str(days) + ".csv")
-        to_append = to_append[["secid", "date", "D_clamp", "rn_prob_5", "rn_prob_20"]]
-        to_append["days"] = days
-        int_spx = int_spx.append(to_append)
-    
-    int_spx["date"] = pd.to_datetime(int_spx["date"])
-    int_spx["date_mon"] = int_spx["date"] + pd.offsets.MonthEnd(0)
-    int_spx["date_week"] = int_spx["date"]  - int_spx['date'].dt.weekday.astype('timedelta64[D]')
-    
+        int_spx = pd.read_csv(f"data/interpolated_D/interpolated_disaster_spx_{days}.csv")
+        int_spx["date"] = pd.to_datetime(int_spx["date"])
+        int_spx["date_mon"] = int_spx["date"] + pd.offsets.MonthEnd(0)
+        int_spx["date_week"] = int_spx['date'] - int_spx['date'].dt.weekday.astype('timedelta64[D]')
+        int_spx_list.append(int_spx)
+
+    int_spx = pd.concat(int_spx_list, ignore_index=True)
+    del(int_spx_list)
     
     # Constructing level disaster measures:
     # Calculating level component on monthly level
@@ -122,7 +110,7 @@ def main(argv = None):
                 
             disaster_measure_list.append(
                     aggregated_disaster_measure(
-                            int_d, "Ind", maturity, variable, "date_mon", min_comps))
+                            int_ind, "Ind", maturity, variable, "date_mon", min_comps))
             
     print("\n---- Aggregating SPX Disaster Measures ----\n")
     for variable in ["D_clamp", "rn_prob_5", "rn_prob_20"]:
@@ -136,7 +124,7 @@ def main(argv = None):
         for maturity in ["level", 30, 60, 90, 120, 150, 180]:
             print("Individual measure: %s, %s" % (variable, maturity))
             disaster_measure_list.append(
-                    aggregated_disaster_measure(int_d, "Ind", "level", variable, "date_week", 5))
+                    aggregated_disaster_measure(int_ind, "Ind", "level", variable, "date_week", 5))
         
     for variable in ["D_clamp", "rn_prob_5", "rn_prob_20"]:
         for maturity in ["level", 30, 60, 90, 120, 150, 180]:
@@ -144,12 +132,11 @@ def main(argv = None):
             disaster_measure_list.append(
                     aggregated_disaster_measure(int_spx, "SPX", "level", variable, "date_week", 1))
         
-        
     # Combining and saving measures:    
     output_df = reduce(lambda df1, df2: df1.append(df2), 
                        [x.output_df() for x in disaster_measure_list])
     
-    output_df.to_csv("estimated_data/disaster_risk_measures/disaster_risk_measures.csv")
+    output_df.to_csv(f"data/disaster_risk_measures/disaster_risk_measures.csv")
  
 if __name__ == "__main__": 
     sys.exit(main(sys.argv))

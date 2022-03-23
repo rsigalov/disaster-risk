@@ -95,7 +95,7 @@ for j in 1:length(var_list)
 end
 
 print("\n--- Outputting Data ----\n")
-CSV.write(string("estimated_data/interpolated_D/int_D_", index_to_append, "_days_", ARGS[2], ".csv"), df_to_save)
+CSV.write(string("data/interpolated_D/int_D_", index_to_append, "_days_", ARGS[2], ".csv"), df_to_save)
 
 
 

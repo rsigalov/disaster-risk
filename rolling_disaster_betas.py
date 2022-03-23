@@ -17,7 +17,7 @@ from __future__ import division
 import sys
 import numpy as np
 import pandas as pd
-import wrds
+# import wrds
 import time
 from arch.univariate import ARX
 pd.options.display.max_columns = 20

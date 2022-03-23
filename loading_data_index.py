@@ -5,7 +5,7 @@ from optparse import OptionParser
 
 import numpy as np
 import pandas as pd
-import wrds
+import psycopg2
 import time
 
 def main(argv = None):
@@ -36,7 +36,18 @@ def main(argv = None):
     year_start = int(options.start_year)
     year_end = int(options.end_year)
 
-    db = wrds.Connection(wrds_username = "rsigalov")
+    with open("account_data/wrds_user.txt") as f:
+        wrds_username = f.readline()
+
+    with open("account_data/wrds_pass.txt") as f:
+        wrds_password = f.readline()
+
+    conn = psycopg2.connect(
+		host="wrds-pgdata.wharton.upenn.edu",
+		port = 9737,
+		database="wrds",
+		user=wrds_username,
+		password=wrds_password)
 
     # Run a script for each year and get all data for a given company:
     year_list = list(range(year_start, year_end + 1, 1))
@@ -76,7 +87,7 @@ def main(argv = None):
             query = query.replace('_secid_', secid)
             query = query.replace('_data_base_', data_base)
 
-            df_option_i = db.raw_sql(query)
+            df_option_i = pd.read_sql_query(query, conn)
             df_prices = df_prices.append(df_option_i)
 
     end = time.time()
@@ -107,13 +118,15 @@ def main(argv = None):
 
     query = """
         select *
-        from IDXDVD
+        from OPTIONM.IDXDVD
         where secid in _secid_list_
     """
 
     query = query.replace('\n', ' ').replace('\t', ' ')
     query = query.replace('_secid_list_', sec_list)
-    dist_data = db.raw_sql(query)
+    dist_data = pd.read_sql_query(query, conn)
+
+    conn.close()
 
     print("")
     print("--- Saving Distributions Data ---")

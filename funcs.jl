@@ -528,6 +528,7 @@ function calc_V_IV_D(spot, r, F, T, interp_params, min_K, max_K, low_limit, high
             IV2_raw = K -> calc_option_value_put(K)/K^2
             IV2 = t -> IV2_raw(spot * t) * spot
 
+            # Changing the lower integration bound to 0.001, as it causes problems sometimes
             integrated_variation = (exp(r*T)*2/T) * (hquadrature(IV1, 0, 1, maxevals = 100000)[1] + hquadrature(IV2, 0, 1, maxevals = 100000)[1] - exp(-r*T)*(exp(r*T)-1-r*T))
 
             # Modifying integrands to account for infinite upper integration limit
